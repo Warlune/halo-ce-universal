@@ -4,6 +4,22 @@ Baseline: `c55e4e2b9d90550b0e761eb78dfe9d7c74880cb9`.
 No public service, firewall/router change or upstream PR is part of this result.
 Live game files, personal saves and unrelated systems were not modified.
 
+## Subsequent profiling and pacing fix
+
+[PROFILING.md](PROFILING.md) records the controlled before/after measurements.
+The null renderer lacked the GL swap's frame pacing and consumed roughly a core
+per game drawing thousands of invisible frames each second. Reusing the existing
+60 Hz vertical-blank condition reduced combined two-game CPU about 94%, while
+internal tick counters remained near 30 Hz and final kill/death scores agreed.
+One host plus one idle protocol stand-in also passed, with about 91% lower host
+CPU. No process counts increased. These results do not qualify a larger capacity.
+
+The final Windows build passed. Disabled/unavailable-directory encrypted joins
+passed again; malformed/expired cases are pending on the paced build because
+native tests were stopped when the user resumed live play. Owned games exited
+through pipe EOF, and no fixture games/locks remained. No native tests will
+automatically resume during live play. Earlier results below retain their scope.
+
 ## Bounded supervision, compatibility and resource qualification
 
 The Windows target rebuilt successfully with opt-in stdin control. The new

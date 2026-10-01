@@ -9,8 +9,10 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { createDirectory } from './server.mjs';
 import { OwnedSupervisor } from './supervisor.mjs';
 import { prepareNativeFixture, ResourceGuard, repository } from './native_fixture.mjs';
+import { ProcessProfile } from './process_profile.mjs';
 
 const mode = process.argv[2], count = Number(process.argv[3]);
+const profiling = process.argv[4] === 'profile', processProfile = new ProcessProfile();
 assert.ok((mode === 'active' && [2, 4].includes(count)) || (mode === 'protocol' && [2, 16, 32, 64, 128].includes(count)), 'Use active 2/4 or protocol 2/16/32/64/128');
 const resources = new ResourceGuard();
 await delay(1000); const baseline = resources.sample();
@@ -42,7 +44,14 @@ async function harvest() {
     if ((await stat(logs[index])).size > 8 * 2 ** 20) throw new Error('Native log size budget exceeded');
     const text = await readFile(logs[index], 'utf8'), seen = observations[index].lines;
     const lines = text.split('\n'); observations[index].lines = lines.length - 1;
-    for (const line of lines.slice(seen, -1)) { const value = parse(line, performance.now() - began); if (value) observations[index].ticks.push(value); }
+    for (const line of lines.slice(seen, -1)) {
+      const atMs = performance.now() - began, value = parse(line, atMs);
+      if (value) observations[index].ticks.push(value);
+      if (line.includes('host profile:')) {
+        const fields = Object.fromEntries([...line.matchAll(/(seconds|frames|ticks|frame_ms|render_ms|idle_ms|tick_ms|max_tick_ms) ([\d.]+)/g)].map(m => [m[1], Number(m[2])]));
+        observations[index].profiles.push({ atMs, ...fields });
+      }
+    }
   }
 }
 function summarizeTicks(ticks) {
@@ -58,7 +67,7 @@ function summarizeTicks(ticks) {
 try {
   const realCount = mode === 'active' ? count : 1;
   for (let index = 0; index < realCount; index++) {
-    const fixture = await prepareNativeFixture(`${mode}-${count}-${index}`, `127.0.0.${220 + index}`);
+    const fixture = await prepareNativeFixture(`${profiling ? 'profile-' : ''}${mode}-${count}-${index}`, `127.0.0.${220 + index}`);
     fixtures.push(fixture);
     Object.assign(fixture.env, { HALO_NETWORK_TEST: index ? 'join' : 'host:bloodgulch',
       HALO_NET_ONLINE: index ? 'false' : 'true', HALO_NETWORK_TEST_START: String(startDelay),
@@ -67,12 +76,26 @@ try {
       HALO_DIRECTORY_ID: id, HALO_DIRECTORY_KEY: key, HALO_DIRECTORY_NAME: 'Bounded local load test' });
     if (mode === 'active') Object.assign(fixture.env, { HALO_TEST_INPUT: `bot:${101 + index * 101}`,
       HALO_NETWORK_TEST_SHOOT: '4', HALO_NETWORK_TEST_KILL: index ? '0' : '10' });
+    if (profiling) fixture.env.HALO_HOST_PROFILE = '1';
     const log = join(fixture.runtime, 'load.local.log'), output = openSync(log, 'w');
-    logs.push(log); outputs.push(output); observations.push({ lines: 0, ticks: [] });
+    logs.push(log); outputs.push(output); observations.push({ lines: 0, ticks: [], profiles: [] });
     const s = new OwnedSupervisor({ file: fixture.file, cwd: fixture.runtime, env: fixture.env, output,
       maxRestarts: 0, maxLifetimeMs: 110000 });
     supervisors.push(s); await s.start();
     await delay(1000); resources.sample();
+    if (mode === 'active' && index === 0) {
+      // The upstream forced-kill fixture assumes the host owns player slot 0.
+      // Starting clients during host initialization can assign them that slot.
+      const deadline = performance.now() + 12000;
+      let ready = false;
+      while (performance.now() < deadline) {
+        const response = await fetch(`${directory.origin}/v1/listings?systemLinkVersion=2&netcodeVersion=9`, { signal: AbortSignal.timeout(2500) });
+        assert.equal(response.status, 200);
+        if ((await response.json()).listings.some(l => l.players === 1 && l.state === 'lobby')) { ready = true; break; }
+        await delay(1000); resources.sample();
+      }
+      assert.ok(ready, 'Host must own its local player before clients start');
+    }
   }
   if (mode === 'protocol') {
     const python = process.env.HALO_TEST_PYTHON;
@@ -87,6 +110,10 @@ try {
   while (performance.now() - began < 95000) {
     await delay(1000); resources.sample();
     if (++iterations % 5 === 0) await resources.ownedProcesses(bots ? [...supervisors, { child: bots }] : supervisors);
+    if (profiling && iterations % 5 === 0) await processProfile.sample([
+      ...supervisors.map((s, i) => ({ label: i ? `client-${i}` : 'host', child: s.child })),
+      ...(bots ? [{ label: 'idle-standins', child: bots }] : [])
+    ], playingAt ? 'playing' : 'startup');
     if (supervisors.some(s => !s.child) || botExited) throw new Error('An owned participant exited before qualification completed');
     const response = await fetch(`${directory.origin}/v1/listings?systemLinkVersion=2&netcodeVersion=9`, { signal: AbortSignal.timeout(2500) });
     assert.equal(response.status, 200);
@@ -102,6 +129,14 @@ try {
   await harvest();
   const summaries = observations.map(o => summarizeTicks(o.ticks));
   assert.ok(summaries.every(s => s.reports >= 10 && s.observedTickRate >= 24), 'Tick progress below qualification floor');
+  if (profiling) for (const observation of observations) {
+    const windows = observation.profiles.filter(p => p.atMs >= playingAt - began + 5000);
+    assert.ok(windows.length >= 3, 'Profiling requires three steady-state windows');
+    const seconds = windows.reduce((s, p) => s + p.seconds, 0);
+    const ticks = windows.reduce((s, p) => s + p.ticks, 0);
+    assert.ok(ticks / seconds >= 29 && ticks / seconds <= 31, 'Profiled simulation must remain at 30 Hz');
+    assert.ok(windows.every(p => p.frames / p.seconds <= 65), 'Null-renderer presentation must stay paced');
+  }
   if (mode === 'active') {
     assert.ok(summaries.every(s => s.distinctLocalPositions >= 5 && s.movingReports >= 5), 'Each real client must move actively');
     assert.ok(summaries[0].highestDeaths > 0, 'Controlled combat/death path must execute');
@@ -141,6 +176,10 @@ const report = { passed: !failure, failure, mode, expectedPlayers: count, peakPl
     p95: deltas.length ? +deltas[Math.floor((deltas.length - 1) * 0.95)].toFixed(3) : null,
     max: deltas.length ? +deltas.at(-1).toFixed(3) : null },
   sampledSameTickScoreComparison: { compared: comparedScores, differing: differingScores }, encryptedTransport: false };
+if (profiling) {
+  report.processProfile = processProfile.summary(resources.samples);
+  report.frameProfiles = observations.map(o => o.profiles.filter(p => playingAt && p.atMs >= playingAt - began + 5000));
+}
 if (fixtures.length) await writeFile(join(fixtures[0].runtime, 'load-results.local.json'), JSON.stringify(report, null, 2));
 console.log(JSON.stringify(report));
 if (failure) process.exitCode = 1;

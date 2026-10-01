@@ -122,6 +122,13 @@ reached 83%, so the protocol ramp also stopped before 32/64/128. Profiling or an
 explicitly arranged lower-load/distributed test environment is the next capacity
 step. See [VALIDATION.md](VALIDATION.md); no 128-active-player claim is supported.
 
+Subsequent two-instance profiling identified and fixed missing null-renderer
+pacing, cutting measured active-game CPU about 94% while retaining 30 Hz ticks.
+The idle-host comparison also improved. Counts were not increased and all
+guards stayed enabled. See [PROFILING.md](PROFILING.md). Native tests are paused
+while the user plays; finish the paced build's remaining compatibility cases
+before considering any new capacity qualification. Do not extrapolate to 128.
+
 Collect at every level: process and per-core CPU; working set/private bytes;
 per-host and per-client bytes/s and packets/s; measured simulation tick target and
 p50/p95/p99 execution time; RTT/jitter and loss; late/dropped updates; correction

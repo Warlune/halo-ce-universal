@@ -1457,6 +1457,11 @@ static void profile_dump_frame(
 	return;
 }
 
+/* The native development profiler consumes existing aggregate wall timers. */
+int host_profile_enabled(void);
+void host_profile_frame(double frame_ms, double render_ms, double idle_ms,
+	double tick_ms, long ticks, double max_tick_ms);
+
 void profile_frame_end(
 	void)
 {
@@ -1465,9 +1470,21 @@ void profile_frame_end(
 	short frame_index;
 
 	profile_timesection_end_now(&profile_globals.current_frame.frame);
-
 	match_assert("c:\\halo\\SOURCE\\cseries\\profile.c", 448,
 		(profile_globals.current_frame.game_tick_count >= 0) && (profile_globals.current_frame.game_tick_count <= MAXIMUM_GAME_TICKS_PER_FRAME));
+	if (host_profile_enabled())
+	{
+		double tick_ms = 0.0, max_tick_ms = 0.0;
+		for (game_tick_index = 0; game_tick_index < profile_globals.current_frame.game_tick_count; game_tick_index++)
+		{
+			double elapsed = profile_globals.current_frame.game_ticks[game_tick_index].total;
+			tick_ms += elapsed;
+			if (elapsed > max_tick_ms) max_tick_ms = elapsed;
+		}
+		host_profile_frame(profile_globals.current_frame.frame.total,
+			profile_globals.current_frame.render.total, profile_globals.current_frame.idle.total,
+			tick_ms, profile_globals.current_frame.game_tick_count, max_tick_ms);
+	}
 
 	for (game_tick_index = 0; game_tick_index<profile_globals.current_frame.game_tick_count; game_tick_index++)
 	{

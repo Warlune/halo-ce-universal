@@ -3673,6 +3673,13 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 		device.index_offset = INDEX_BUFFER_SIZE;
 #endif
 	}
+	/* Interpolated frames normally block in platform_video_swap. Without a
+	GL context (the null renderer), that swap never happens: the main loop
+	otherwise renders thousands of invisible frames per second. Reuse the
+	existing 60 Hz condition wait; simulation still advances from its clock
+	at 30 Hz, and visible/interpolation-disabled presentation is unchanged. */
+	if (!device.gl_ready && halo_interpolation_enabled())
+		D3DDevice_BlockUntilVerticalBlank();
 	device.frame++;
 	stats.presents++;
 	if (debug_settings.statistics && device.frame % 60 == 0)

@@ -22,6 +22,10 @@ Two scripted active games passed; a four-game attempt hit its CPU guard. One
 host plus 15 idle protocol stand-ins passed, but its CPU peak stopped further
 scaling. These development results do not establish 128-player active capacity.
 
+Subsequent [bounded profiling](PROFILING.md) found missing null-renderer frame
+pacing. The fix reduced measured two-game CPU about 94% with simulation still at
+30 Hz. No higher count was tested; native acceptance is paused during live play.
+
 The design target is **128 simultaneous active players**. The number 128 in a
 listing is a permitted capacity field, not evidence that gameplay works at that
 size. See [the implementation and capacity plan](PLAN.md).

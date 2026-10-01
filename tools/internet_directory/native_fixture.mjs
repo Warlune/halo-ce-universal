@@ -64,7 +64,7 @@ export class ResourceGuard {
     this.hot = cpu > 85 ? this.hot + 1 : 0;
     const loopDelayMs = this.delay.max / 1e6; this.delay.reset();
     this.lagged = loopDelayMs > 500 ? this.lagged + 1 : 0;
-    this.samples.push({ cpu, freeGiB, elapsed });
+    this.samples.push({ at: this.at, cpu, freeGiB, elapsed });
     if (freeGiB < 4 || this.hot >= 3 || this.lagged >= 2) throw new Error('Resource guard stopped test: memory, CPU or responsiveness limit');
     return { cpu, freeGiB };
   }
