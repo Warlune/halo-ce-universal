@@ -21,7 +21,11 @@ This is a keyboard-operated display prototype, not the final mouse/controller
 scrolling UI. It does not replace team selection, host map/mode controls or the
 start countdown. It changes no packets, version constants, directory fields,
 P2P invites, game settings, player ownership or proprietary widget assets.
-The overlay is nonmodal: existing menu/game controls keep their normal behavior.
+Keyboard/controller menu controls retain their existing behavior. While an open
+roster was drawn on the preceding frame, mouse hover/click/wheel events are
+consumed so hidden controls cannot be activated through it. A missing font does
+not block the pointer. Native checks must cover opening/closing, modal transitions
+and returning to the menu; this source-level fix has not been exercised in Halo.
 
 There is no per-player lobby-ready boolean in `network_player`. The in-game
 distributed `client_ready` message concerns synchronization, not a player's
@@ -71,7 +75,7 @@ automatically launch games or increase process counts during live play.
 
 | Gate | Current status |
 | --- | --- |
-| Roster visual/input tests with isolated fixtures | Pending |
+| Roster visual/input tests with isolated fixtures | Pending: font/layout, F8/pages, mouse click-through and transition routing |
 | Old/new client roster compatibility, unchanged direct invite/LAN play | Pending native confirmation; no wire changes |
 | Paced-build malformed/expired-directory direct joins | Pending (disabled/unavailable passed before roster addition) |
 | Post-pacing 16/32/64/128 protocol stages | Pending; only one host plus one idle stand-in profiled after pacing |

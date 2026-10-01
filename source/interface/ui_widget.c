@@ -5601,7 +5601,7 @@ static void ui_widgets_process_mouse(
 	short controller_index = 0;
 
 	if (!halo_ui_pointer_update(ui_mouse_menus_active(), &pointer) ||
-		virtual_keyboard_active())
+		virtual_keyboard_active() || lobby_roster_blocks_pointer())
 	{
 		ui_mouse_press_count = 0;
 		ui_mouse_hover_pending = FALSE;

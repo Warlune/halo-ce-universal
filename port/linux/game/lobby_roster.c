@@ -13,6 +13,7 @@
 #include "text/unicode.h"
 
 static struct lobby_roster_view roster_view;
+static int roster_drawn_open;
 static struct lobby_roster_model roster;
 static struct lobby_roster_entry entries[LOBBY_ROSTER_LIMIT];
 typedef char lobby_roster_capacity_check[HALO_PORT_MAXIMUM_NETWORK_PLAYERS == LOBBY_ROSTER_LIMIT ? 1 : -1];
@@ -22,6 +23,7 @@ void lobby_roster_update(int active)
 {
 	struct network_game *game = active ? network_game_get_game() : NULL;
 	int i, j;
+	if (!game) roster_drawn_open = 0;
 	if (game) {
 		for (i = 0; i < LOBBY_ROSTER_LIMIT; i++) {
 			const struct network_player *player = &game->players[i];
@@ -39,6 +41,13 @@ void lobby_roster_update(int active)
 	roster.offset = roster_view.offset;
 }
 
+int lobby_roster_blocks_pointer(void)
+{
+	/* Mouse processing precedes rendering: suppress targets hidden on the last
+	   frame. A missing font must never create an invisible input trap. */
+	return roster_drawn_open;
+}
+
 static void roster_text(short x, short y, short right, const wchar_t *text)
 {
 	rectangle2d bounds = { y, x, (short)(y + 22), right };
@@ -52,6 +61,7 @@ void lobby_roster_render(void)
 	wchar_t text[80];
 	int i, end;
 	rectangle2d panel;
+	roster_drawn_open = 0;
 	if (font == NONE) return;
 	draw_string_set_draw_mode(font, NONE, 0, 0, &color);
 	draw_string_set_indents(0, 0);
@@ -64,6 +74,7 @@ void lobby_roster_render(void)
 	}
 	panel.y0 = 48; panel.x0 = 32; panel.y1 = 438; panel.x1 = 608;
 	draw_quad(&panel, 0xF0101824);
+	roster_drawn_open = 1;
 	end = MIN(roster.count, roster.offset + LOBBY_ROSTER_PAGE);
 	usnprintf(text, NUMBEROF(text), L"Players %d-%d of %d", roster.count ? roster.offset + 1 : 0, end, roster.count);
 	roster_text(48, 62, 592, text);
