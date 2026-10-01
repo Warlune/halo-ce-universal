@@ -81,6 +81,9 @@ BOOL platform_sdl_initialize(void)
 		return FALSE;
 	}
 	platform_sdl_started = TRUE;
+	/* The event/timer owner also exists for the null renderer, which never
+	creates a window. Timed automated shutdown must still run on this thread. */
+	platform_event_thread = SDL_GetCurrentThreadID();
 #ifndef HALO_ANDROID
 	/* found (or offered to the player, platform_offer_game_data) before the
 	game's window opens */
@@ -710,14 +713,14 @@ static void platform_show_pending_message(void)
 
 void platform_pump_events(void)
 {
-	/* debug.exit_after (seconds) ends the game that long after the window
-	opens, as closing it does (tools/pgo_train.py) */
+	/* debug.exit_after ends the game after the first event-pump call, even
+	without a rendering window (tools/pgo_train.py and unattended tests). */
 	static Uint64 exit_ticks = (Uint64)-1;
 	SDL_Event event;
 	static BOOL looked_at_clipboard;
 	BOOL look_at_clipboard = !looked_at_clipboard;
 
-	if (!platform_window || SDL_GetCurrentThreadID() != platform_event_thread)
+	if (SDL_GetCurrentThreadID() != platform_event_thread)
 		return;
 	if (exit_ticks == (Uint64)-1)
 	{
@@ -730,6 +733,8 @@ void platform_pump_events(void)
 		platform_log("exiting after debug.exit_after");
 		exit(EXIT_SUCCESS);
 	}
+	if (!platform_window)
+		return;
 	platform_show_pending_message();
 #ifndef HALO_ANDROID
 	updater_poll(platform_window);

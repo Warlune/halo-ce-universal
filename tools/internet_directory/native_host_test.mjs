@@ -1,5 +1,5 @@
 // Runs only an explicitly prepared, ignored Windows development fixture.
-// Never opens an invite or uses the live game's configuration/save directory.
+// Never invokes the system URI handler or uses the live game's config/saves.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
@@ -10,11 +10,14 @@ import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createDirectory } from './server.mjs';
 import { INVITE } from './protocol.mjs';
+import { resolveJoin } from './browser.mjs';
+import { createLocalSignalFixture } from './local_signal_fixture.mjs';
 
 assert.equal(process.platform, 'win32', 'This fixture currently supports Windows only');
 const mode = process.argv[2] || 'public';
-assert.ok(['public', 'private', 'match'].includes(mode), 'Use public, private or match');
+assert.ok(['public', 'private', 'match', 'tunnel', 'restart'].includes(mode), 'Use public, private, match, tunnel or restart');
 const isPublic = mode !== 'private';
+const hasClient = mode === 'match' || mode === 'tunnel';
 const root = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const runtime = join(root, 'build', 'directory-game-test');
 assert.equal(await readFile(join(runtime, '.isolated-directory-test'), 'utf8'), 'local native directory fixture');
@@ -39,8 +42,12 @@ Object.assign(environment, {
   HALO_DIRECTORY_ID: id, HALO_DIRECTORY_KEY: key, HALO_DIRECTORY_NAME: 'Isolated native test'
 });
 if (!isPublic) delete environment.HALO_DIRECTORY_PUBLIC; // Exercise default-off.
+if (mode === 'restart') {
+  environment.HALO_NULL_RENDERER = '1';
+  environment.HALO_EXIT_AFTER = '30';
+}
 const clientRuntime = join(runtime, 'client');
-if (mode === 'match') {
+if (hasClient) {
   for (const path of ['data', 'saves', 'profile', 'local', 'roaming']) await mkdir(join(clientRuntime, path), { recursive: true });
   await cp(join(runtime, 'data/maps'), join(clientRuntime, 'data/maps'), { recursive: true, force: false });
   for (const file of ['halo.exe', 'SDL3.dll']) await copyFile(join(runtime, file), join(clientRuntime, file));
@@ -50,6 +57,13 @@ const logPath = join(runtime, `${mode}.local.log`);
 const log = openSync(logPath, 'w');
 const directory = await createDirectory({ hosts: new Map([[id, key]]) });
 environment.HALO_DIRECTORY_URL = directory.origin;
+const signalling = mode === 'tunnel' ? await createLocalSignalFixture() : null;
+if (signalling) {
+  environment.HALO_NET_BROKERS = signalling.address;
+  // Neither game sends LAN discovery to the other's address. A successful
+  // match therefore requires the selected invite's P2P discovery transport.
+  environment.HALO_NET_BROADCAST = '127.0.0.250';
+}
 let child, guard, failure, exitResult, resolved = false;
 let client, clientExited, clientLog;
 let maximumObservedPlayers = 0;
@@ -57,8 +71,13 @@ const seenStates = new Set();
 const seenMaps = new Set();
 let firstExpiry = 0, lastExpiry = 0, firstSeenMs = null;
 let previousMetadata, heartbeatRenewals = 0;
+let previousInvite;
 const began = performance.now();
 try {
+ for (let cycle = 1; cycle <= (mode === 'restart' ? 2 : 1); cycle++) {
+  exitResult = undefined; resolved = false; firstExpiry = 0; lastExpiry = 0; firstSeenMs = null;
+  previousMetadata = undefined; heartbeatRenewals = 0; maximumObservedPlayers = 0;
+  seenStates.clear(); seenMaps.clear();
   child = spawn(binary, [], { cwd: runtime, env: environment, windowsHide: true, stdio: ['ignore', log, log] });
   const exited = new Promise(resolveExit => {
     child.once('error', () => { exitResult = { launchFailed: true }; resolveExit(); });
@@ -76,7 +95,7 @@ try {
       assert.equal(listing.id, id);
       // Upstream first creates its default lobby, then the harness changes map.
       assert.ok(['carousel', 'bloodgulch'].includes(listing.map));
-      assert.ok(Number.isInteger(listing.players) && listing.players >= 0 && listing.players <= (mode === 'match' ? 2 : 1));
+      assert.ok(Number.isInteger(listing.players) && listing.players >= 0 && listing.players <= (hasClient ? 2 : 1));
       maximumObservedPlayers = Math.max(maximumObservedPlayers, listing.players);
       if (listing.state === 'playing') {
         assert.equal(listing.map, 'bloodgulch');
@@ -94,19 +113,27 @@ try {
       lastExpiry = listing.expiresAt;
       firstSeenMs ??= Math.round(performance.now() - began);
       if (!resolved) {
-        const selected = await fetch(`${directory.origin}/v1/listings/${id}/join${versions}`);
-        assert.equal(selected.status, 200);
-        assert.ok(INVITE.test((await selected.json()).invite), 'Selected real host must resolve a valid invite');
+        if (signalling) assert.equal(signalling.stats().publishes, 0, 'Browsing must not initiate encrypted signalling');
+        const selected = await resolveJoin((path, options) => fetch(directory.origin + path, options), id,
+          { systemLinkVersion: 2, netcodeVersion: 9 });
+        assert.ok(INVITE.test(selected.invite), 'Selected real host must resolve a valid invite');
+        if (mode === 'restart') {
+          assert.ok(!previousInvite || previousInvite !== selected.invite, 'Restart must replace the previous process invite');
+          previousInvite = selected.invite;
+        }
         resolved = true; // Resolution alone never opens a URI or connects a peer.
-        if (mode === 'match') {
-          // Separate LAN acceptance only: this does NOT test the invite tunnel.
+        if (hasClient) {
           const clientEnv = { ...environment, HALO_NET_ADDRESS: '127.0.0.201', HALO_NET_BROADCAST: '127.0.0.200',
             HALO_NET_ONLINE: 'false', HALO_NETWORK_TEST: 'join', HALO_EXIT_AFTER: '40', HALO_DIRECTORY_PUBLIC: '0',
             HALO_DATA_ROOT: join(clientRuntime, 'data'), HALO_SAVE_ROOT: join(clientRuntime, 'saves'),
             LOCALAPPDATA: join(clientRuntime, 'local'), APPDATA: join(clientRuntime, 'roaming'), USERPROFILE: join(clientRuntime, 'profile') };
           delete clientEnv.HALO_DIRECTORY_KEY;
+          if (signalling) {
+            clientEnv.HALO_NET_ONLINE = 'true';
+            clientEnv.HALO_NET_BROADCAST = '127.0.0.250';
+          }
           clientLog = openSync(join(clientRuntime, 'match.local.log'), 'w');
-          client = spawn(join(clientRuntime, 'halo.exe'), [], { cwd: clientRuntime, env: clientEnv,
+          client = spawn(join(clientRuntime, 'halo.exe'), signalling ? [selected.invite] : [], { cwd: clientRuntime, env: clientEnv,
             windowsHide: true, stdio: ['ignore', clientLog, clientLog] });
           client.once('error', () => { clientExited = { launchFailed: true }; });
           client.once('exit', (code, signal) => { clientExited = { code, signal }; });
@@ -121,18 +148,25 @@ try {
   const transcript = await readFile(logPath, 'utf8');
   assert.ok(transcript.includes('exiting after debug.exit_after'), 'Timed native shutdown must run');
   assert.ok(!transcript.includes('the invite link is on the clipboard'), 'Automated host must leave clipboard alone');
-  assert.ok(!transcript.includes('Internet play: reaching '), 'Browsing must not create P2P peers');
+  if (!signalling) assert.ok(!transcript.includes('Internet play: reaching '), 'Browsing must not create P2P peers');
   const after = await (await fetch(`${directory.origin}/v1/listings${versions}`)).json();
   assert.equal(after.listings.length, 0, 'Graceful shutdown must withdraw before the lease expires');
   if (isPublic) {
     assert.ok(resolved, 'Actual native host was never registered');
-    if (mode === 'match') {
-      assert.equal(maximumObservedPlayers, 2, 'Second real LAN client must join');
+    if (hasClient) {
+      assert.equal(maximumObservedPlayers, 2, 'Second real client must join');
       assert.ok(seenStates.has('playing'), 'Actual host must reach in-game state');
       assert.equal(clientExited?.code, 0, 'Isolated client must finish normally');
       const clientTranscript = await readFile(join(clientRuntime, 'match.local.log'), 'utf8');
       assert.ok(/network test:.*player [01]:/.test(clientTranscript), 'Client must simulate the loaded match');
       assert.ok(/network test:.*player [01]:/.test(transcript), 'Host must simulate the loaded match');
+      if (signalling) {
+        assert.ok(clientTranscript.includes('Internet play: connected to host '), 'Client must establish authenticated encrypted tunnel');
+        assert.ok(transcript.includes('Internet play: connected to player '), 'Host must establish authenticated encrypted tunnel');
+        assert.ok(!clientTranscript.includes('passed the invite to'), 'Test invite must stay in the intended isolated process');
+        assert.ok(signalling.stats().forwarded >= 3, 'Actual sealed join/accept/proof exchange must pass local signalling');
+        assert.equal(signalling.stats().rejected, 0, 'Native signalling must fit the bounded fixture protocol');
+      }
     }
     assert.ok(lastExpiry - firstExpiry >= 14000, 'A later native heartbeat must renew the lease');
     assert.ok(heartbeatRenewals > 0, 'Unchanged native metadata must receive a periodic heartbeat');
@@ -141,11 +175,14 @@ try {
     assert.ok(!transcript.includes('Directory:'), 'Private mode must not start the registration worker');
     assert.ok(transcript.includes('Internet play: hosting.'), 'Private case must still exercise a real online host');
   }
-  console.log(JSON.stringify({ passed: true, mode, firstSeenMs, states: [...seenStates], maps: [...seenMaps],
+  console.log(JSON.stringify({ passed: true, mode, cycle, stableListingAcrossRestart: mode === 'restart' && cycle === 2,
+    firstSeenMs, states: [...seenStates], maps: [...seenMaps],
     heartbeatRenewalMs: lastExpiry - firstExpiry, heartbeatRenewals, selectedInviteResolved: resolved,
     gracefulWithdrawal: isPublic, gameExitCode: exitResult.code, maximumObservedPlayers,
     runtimeMs: Math.round(performance.now() - began), additionalGameClients: client ? 1 : 0,
-    encryptedTunnelTested: false }));
+    encryptedTunnelTested: !!signalling, signalling: signalling?.stats() }));
+  clearTimeout(guard);
+ }
 } finally {
   clearTimeout(guard);
   if (child && !exitResult) child.kill(); // Only the exact process spawned here.
@@ -153,4 +190,5 @@ try {
   closeSync(log);
   if (clientLog !== undefined) closeSync(clientLog);
   await directory.close();
+  if (signalling) await signalling.close();
 }

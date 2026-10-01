@@ -9,8 +9,9 @@ ephemeral port; there is intentionally no public bind option.
 
 The Windows game compiles and a bounded two-game local test verifies native
 registration, a real System Link match, heartbeat and graceful withdrawal.
-Selected invite resolution is tested; URI handoff and the encrypted Internet
-tunnel are not. See [native integration](NATIVE_INTEGRATION.md),
+Directory selection also establishes the existing authenticated encrypted
+tunnel and a real match through an ephemeral local signalling fixture. WAN
+reachability and desktop URI handoff remain untested. See [native integration](NATIVE_INTEGRATION.md),
 [measured results](VALIDATION.md), and [Windows prerequisites](WINDOWS_BUILD.md).
 
 The design target is **128 simultaneous active players**. The number 128 in a
@@ -23,6 +24,7 @@ Use an existing Node.js 24 runtime. No `npm install` or package dependencies:
 
 ```text
 node --test --test-isolation=none tools/internet_directory/directory.test.mjs
+node --test --test-isolation=none tools/internet_directory/local_signal_fixture.test.mjs
 node tools/internet_directory/simulate.mjs
 node tools/internet_directory/demo.mjs --demo
 ```
@@ -68,7 +70,9 @@ systemLinkVersion, netcodeVersion, state, invite
 `state` is `lobby` or `playing`. `players` is an integer from zero through
 `maxPlayers`, which is limited to 1–128. The invite must be precisely
 `halo://join/` followed by 64 hex digits. Unknown fields, including personal
-identifiers, are rejected. Names are bounded printable ASCII in this prototype;
+identifiers, are rejected. Duplicate keys (including escaped duplicates), nested
+values, malformed UTF-8 and invalid JSON are rejected before field validation.
+Names are bounded printable ASCII in this prototype;
 localization needs a separate design. System Link format and netcode version are
 independent compatibility fields. Build is display metadata, not a substitute
 for either version. Counts, names and maps are host assertions, not attestations.
@@ -85,7 +89,8 @@ listings; hosts must heartbeat again. This prototype does not persist identity.
 `HostRegistration.update(snapshot)` takes the PUT fields plus two explicit
 booleans: `public` and `online`. A missing/false opt-in, offline mode, stopped
 state or invalid active snapshot withdraws any previous listing. Updates and
-withdrawals are serialized. After an ambiguous PUT failure, a later withdrawal
+withdrawals are serialized, and superseded queued snapshots are skipped. A queued
+opt-out suppresses publication that has not started. After an ambiguous PUT failure, a later withdrawal
 still sends DELETE. A failed DELETE is retried by the next lifecycle update;
 expiry bounds visibility if the host crashes or loses the network. A private
 host which has never registered makes no HTTP request.
@@ -98,6 +103,13 @@ Production jitter and generation fencing remain future work. The native worker
 only accepts explicitly configured loopback HTTP; it cannot publish remotely.
 
 ## Deliberate Join and privacy
+
+Browser requests have a three-second deadline and bounded streamed JSON reads:
+256 KiB for browse, 1 KiB for Join, at most 256 unique listings. Metadata fields,
+counts, versions, IDs and integer expiry are validated; stale entries are hidden.
+Leases beyond five minutes are rejected. The reference server accepts configured
+leases of 1-300 seconds and caps storage at 256 entries. The registration adapter
+cancels unused response bodies instead of buffering untrusted content.
 
 Browsing reads metadata only. Selecting one host fetches its current invite.
 The UI then presents a separate link to open Halo; it never auto-connects hosts,

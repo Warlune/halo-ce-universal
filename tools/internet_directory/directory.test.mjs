@@ -178,13 +178,68 @@ test('host transport requires HTTPS remotely and refuses redirects', async () =>
 
 test('serialized withdrawal follows ambiguous/timed-out registration', async () => {
   const calls = [];
+  let markStarted, failRequest;
+  const started = new Promise(resolve => { markStarted = resolve; });
   const host = new HostRegistration({ directory: 'http://127.0.0.1:1234', id: randomUUID(), key: '0'.repeat(64),
-    fetcher: async (url, options) => { calls.push(options.method); if (options.method === 'PUT') throw new Error('timeout'); return new Response('{}'); } });
+    fetcher: async (url, options) => { calls.push(options.method); if (options.method === 'PUT') {
+      markStarted(); return new Promise((resolve, reject) => { failRequest = reject; });
+    } return new Response('{}'); } });
   const first = host.update({ ...listing(), public: true, online: true });
+  const rejected = assert.rejects(first, /timeout/);
+  await started;
   const second = host.update({ public: false });
-  await assert.rejects(first, /timeout/);
+  failRequest(new Error('timeout'));
+  await rejected;
   await second;
   assert.deepEqual(calls, ['PUT', 'DELETE']);
+});
+
+test('queued opt-out suppresses obsolete registration before any request begins', async () => {
+  const calls = [];
+  const host = new HostRegistration({ directory: 'http://127.0.0.1:1234', id: randomUUID(), key: '0'.repeat(64),
+    fetcher: async (url, options) => { calls.push(options.method); return new Response('{}'); } });
+  await Promise.all([host.update({ ...listing(), public: true, online: true }), host.update({ public: false })]);
+  assert.deepEqual(calls, []);
+  for (const publicValue of [1, 'true', '1', null, undefined])
+    await host.update({ ...listing(), public: publicValue, online: true });
+  assert.deepEqual(calls, []);
+});
+
+test('registration rejects duplicate escaped keys, nested values and malformed UTF-8', async t => {
+  const f = await fixture(t);
+  const valid = JSON.stringify(listing());
+  const payloads = [valid.replace('{', '{"name":"hidden",'),
+    valid.replace('{', '{"na\\u006de":"hidden",'), valid.replace('"Test host"', '{}'),
+    valid.replace('"players":1', '"players":01'), valid + ' false',
+    Buffer.from([0x7b, 0xff, 0x7d])];
+  for (const body of payloads) {
+    const response = await f.fetcher(`/v1/listings/${f.id}`, { method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${f.key}` }, body });
+    assert.equal(response.status, 400);
+  }
+  assert.deepEqual(await browse(f.fetcher, versions), []);
+});
+
+test('browser enforces response byte/count bounds, metadata types and expiry', async () => {
+  const id = randomUUID(), time = Date.now();
+  const { invite, ...metadata } = listing();
+  const item = { ...metadata, id, expiresAt: time + 10000 };
+  const response = listings => async () => new Response(JSON.stringify({ apiVersion: 1, listings }));
+  for (const invalid of [{ ...item, players: -1 }, { ...item, name: {} }, { ...item, invite },
+    { ...item, private: true }, { ...item, expiresAt: time + 300001 }, { ...item, expiresAt: 1.5 }])
+    await assert.rejects(browse(response([invalid]), versions, () => time));
+  await assert.rejects(browse(response([item, item]), versions));
+  await assert.rejects(browse(response(Array(257).fill(item)), versions));
+  assert.deepEqual(await browse(response([{ ...item, expiresAt: time }]), versions, () => time), []);
+  await assert.rejects(browse(async () => new Response(' '.repeat(256 * 1024 + 1)), versions), /too large/);
+  await assert.rejects(resolveJoin(async () => new Response(' '.repeat(1025)), id, versions), /too large/);
+  await assert.rejects(resolveJoin(async () => new Response(JSON.stringify({ apiVersion: 1, invite, expiresAt: time + 300001 })), id, versions, () => time), /Invalid/);
+  await assert.rejects(browse(response([]), { ...versions, netcodeVersion: '9' }), /Invalid/);
+});
+
+test('directory refuses invalid operator resource limits before listening', async () => {
+  for (const options of [{ ttlMs: 0 }, { ttlMs: Infinity }, { ttlMs: 300001 },
+    { rateLimit: -1 }, { maxListings: 257 }]) await assert.rejects(createDirectory(options), /Invalid/);
 });
 
 test('browser rejects unsupported, expired and non-Halo join responses', async () => {

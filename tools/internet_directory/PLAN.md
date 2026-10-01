@@ -55,8 +55,10 @@ Source baseline:
 3. **First actual browser-to-host game (partly tested).** Native registration,
    selected invite resolution, map/count changes, lobby/playing, periodic
    heartbeat, graceful withdrawal and a separate two-game local System Link
-   match are verified. This does not establish URI handoff or encrypted tunnel
-   joining. Continue with isolated development executable/config,
+   match are verified. A subsequent local signalling test resolves a selected
+   invite, authenticates the existing encrypted tunnel and joins the match with
+   mutual LAN discovery disabled. Desktop URI handoff and WAN remain untested.
+   Continue with isolated development executable/config,
    maps data location, saves and logs; updater and UPnP disabled. Do not launch
    while desktop handoff might target the user's live game. Confirm public host
    registration, browse, selected invite resolution, tunnel establishment,
@@ -68,7 +70,11 @@ Source baseline:
    then matches its advertisement/identity deliberately. Preserve LAN discovery
    and existing invite workflows. Test incompatible versions, stale/full hosts,
    directory outages and cancellation. Coordinate around PR #20's current state.
-5. **Unattended hosting lifecycle.** Design a real Linux dedicated path with no
+5. **Unattended hosting lifecycle (first bounded piece tested).** The no-window
+   event timer now permits clean shutdown. Two sequential null-renderer hosts
+   heartbeat/withdraw normally and reuse a listing ID with a fresh invite.
+   Crash recovery, external operator stop and production supervision remain open.
+   Design a real Linux dedicated path with no
    local human player, map/variant rotation, orderly shutdown, restart recovery,
    persistent listing identity and health reporting. Identify dependencies on
    renderer/audio/UI before removing them. Do not relabel debug test modes as

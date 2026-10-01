@@ -2,7 +2,7 @@ import http from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { performance } from 'node:perf_hooks';
-import { API_VERSION, compatible, LISTING_ID, validateListing } from './protocol.mjs';
+import { API_VERSION, compatible, LISTING_ID, validateListing, parseRegistration, MAX_LEASE_MS } from './protocol.mjs';
 
 class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -14,6 +14,10 @@ const fail = (status, message) => { throw new HttpError(status, message); };
 export async function createDirectory({ hosts = new Map(), ttlMs = 45000,
   now = () => performance.now(), wallNow = Date.now, rateLimit = 120,
   maxListings = 256, blockedIds = new Set() } = {}) {
+  if (!Number.isInteger(ttlMs) || ttlMs < 1000 || ttlMs > MAX_LEASE_MS ||
+      !Number.isInteger(rateLimit) || rateLimit < 1 || rateLimit > 10000 ||
+      !Number.isInteger(maxListings) || maxListings < 0 || maxListings > 256)
+    throw new Error('Invalid directory resource limits');
   const page = await readFile(new URL('./browser.html', import.meta.url));
   const script = await readFile(new URL('./browser.mjs', import.meta.url));
   const protocol = await readFile(new URL('./protocol.mjs', import.meta.url));
@@ -63,7 +67,7 @@ export async function createDirectory({ hosts = new Map(), ttlMs = 45000,
       if (size > 4096) fail(413, 'Request too large');
       chunks.push(chunk);
     }
-    try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); }
+    try { return parseRegistration(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks))); }
     catch { fail(400, 'Invalid JSON'); }
   }
   const server = http.createServer({ maxHeaderSize: 8192 }, async (req, res) => {

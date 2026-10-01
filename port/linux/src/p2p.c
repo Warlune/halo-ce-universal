@@ -2683,6 +2683,11 @@ int p2p_hand_off_invite(void)
 	int attempt;
 	int result = 0;
 
+	/* Automated copies consume their own command-line invite. Do not send it
+	to a desktop instance or create a persistent desktop handoff credential. */
+	if (config_real("debug.exit_after") > 0.0 || config_boolean("debug.hidden_window") ||
+		config_boolean("debug.null_renderer"))
+		return 0;
 	if (!command_line_invite(invite, sizeof(invite)) || !handoff_key(key))
 		return 0;
 	socket = open_socket(SOCK_DGRAM, network_long(0x7F000001), 0, NULL);
@@ -2992,7 +2997,9 @@ void p2p_initialize(unsigned long local_address)
 #ifndef HALO_ANDROID
 	/* the first copy of the game takes the invites later ones are opened
 	with */
-	p2p.has_handoff_key = handoff_key(p2p.handoff_key);
+	if (!(config_real("debug.exit_after") > 0.0 || config_boolean("debug.hidden_window") ||
+		config_boolean("debug.null_renderer")))
+		p2p.has_handoff_key = handoff_key(p2p.handoff_key);
 	if (p2p.has_handoff_key)
 		p2p.handoff_socket = open_socket(SOCK_DGRAM, network_long(0x7F000001), network_short(HANDOFF_PORT), NULL);
 #endif

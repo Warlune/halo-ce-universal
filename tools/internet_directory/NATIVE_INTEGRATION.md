@@ -60,29 +60,47 @@ launch. It never copies from or writes to a live installation itself.
 node tools/internet_directory/native_host_test.mjs public
 node tools/internet_directory/native_host_test.mjs private
 node tools/internet_directory/native_host_test.mjs match
+node tools/internet_directory/native_host_test.mjs tunnel
+node tools/internet_directory/native_host_test.mjs restart
 ```
 
 `public` runs a one-player lobby; `private` checks default-off publication;
 `match` prepares a second isolated fixture from the first fixture's copied maps
 and runs one host plus one real LAN client. The match test uses loopback System
 Link after explicit invite resolution. It does not consume that invite to
-establish an encrypted tunnel. No URI is opened and no unrelated process is
-joined or stopped. Only spawned processes can be terminated by the 65-second
+establish an encrypted tunnel. `tunnel` instead resolves through the browser's
+Join function and passes that ephemeral invite to the isolated client's command
+line. Both games send ordinary LAN discovery to an unused loopback address,
+requiring the selected authenticated P2P tunnel to discover and join the match.
+No system URI handler is invoked and no unrelated process is joined or stopped.
+Only spawned processes can be terminated by the 65-second
 guard. Each copy has separate data, saves, profiles and logs. Maps and raw logs
 stay under ignored `build/`; raw logs contain upstream invites and must not be
 shared or committed. Provisioned directory credentials exist only in memory.
 
-The tests disable updater, UPnP, STUN/MQTT signalling and Discord. A hidden
-rendering window is used. Automated instances now skip desktop clipboard access,
-matching the existing automated-run URL-handler guard. Null rendering remains a
-debug facility: upstream's event-pump timer returns before checking exit_after
-when no window exists. It is not a reliable production shutdown mechanism.
+The tests disable updater, UPnP, external STUN/MQTT signalling and Discord.
+`tunnel` uses a test-only MQTT subset in `local_signal_fixture.mjs`, bound only
+to loopback, with eight connections maximum, bounded buffers/messages, no
+retained messages or persistence, and no payload logging. It is not a production
+broker. Encrypted UDP uses the two processes' local-machine candidates, so this
+does not establish WAN or NAT traversal. Other modes use no signalling broker.
+
+Automated instances skip desktop clipboard access, URL-handler registration and
+desktop invite handoff. They consume their own command-line invite and create
+no desktop handoff credential. Rendering windows are hidden. `restart` runs
+two sequential 30-second null-renderer hosts against the same in-memory listing
+identity. Each heartbeats and withdraws before normal exit; the replacement's
+invite must differ. The event-pump timer now works without a window because its
+owner is initialized with SDL, before checking the window. This is a bounded
+unattended lifecycle test, not a dedicated server: it still adds a local player,
+does not test crash recovery, and supplies no production service supervisor.
 
 The completed two-game test observed initial default lobby map `carousel`, then
 `bloodgulch`, player count rising to two, lobby -> playing, unchanged-metadata
 heartbeat renewal, selected invite resolution, and immediate withdrawal on
 normal host exit. Both copies logged simulated players in the loaded match.
-This was a short lifecycle/LAN check, not movement/combat/vehicle agreement,
+The subsequent encrypted-tunnel run also reached a two-player match and clean
+shutdown. These were short lifecycle checks, not movement/combat/vehicle agreement,
 latency measurement, WAN acceptance or 128-player validation. Results and
 remaining gates are in [VALIDATION.md](VALIDATION.md) and [PLAN.md](PLAN.md).
 

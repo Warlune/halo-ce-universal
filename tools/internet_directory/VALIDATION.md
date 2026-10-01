@@ -4,6 +4,46 @@ Baseline: `c55e4e2b9d90550b0e761eb78dfe9d7c74880cb9`.
 No public service, firewall/router change or upstream PR is part of this result.
 Live game files, personal saves and unrelated systems were not modified.
 
+## Subsequent encrypted-join and unattended milestone
+
+After `a18d32e9`, the Windows target rebuilt successfully with isolated automated
+invite handling and a null-renderer event-timer fix. The final
+`native_host_test.mjs tunnel` run **passed** in 45876 ms: first listing at 4141 ms,
+two actual players, lobby -> playing, valid selected invite, authenticated
+encrypted peer connections on both games, 30148 ms lease advance with an
+unchanged-metadata heartbeat, and normal exit/withdrawal. Ordinary LAN discovery
+was directed away from both games. The loopback signalling fixture recorded two
+connections, four sealed publishes/forwards (380 payload bytes), zero protocol
+rejects and zero remaining connections. A prior tunnel run also passed in
+46845 ms. Neither run used public brokers, STUN, UPnP or the desktop URI handler.
+This is same-machine encrypted-join evidence, **not WAN reachability**.
+
+`native_host_test.mjs restart` **passed both cycles**: two sequential 30-second
+null-renderer hosts, one in-memory listing identity, distinct process invites,
+one unchanged-metadata heartbeat each and graceful withdrawal before expiry.
+Cycle one completed at 30332 ms; both completed at 60643 ms. Both exit codes
+were zero. A preliminary 20-second run exited correctly but was too short for
+the heartbeat assertion after metadata settled; it was extended, not counted
+as a heartbeat pass. The game still creates a local player and this does not
+prove a production dedicated server, crash recovery or supervision.
+
+The hardened directory and local signalling fixture passed **19 tests**
+(16 directory + 3 signalling, 771.8 ms). New cases cover duplicate/escaped JSON
+keys, malformed UTF-8, nested values, streamed response byte bounds, metadata
+types, duplicate listings, conservative expiry, invalid operator limits, strict
+opt-in and queued opt-out before registration starts. An already in-flight
+ambiguous PUT still receives a serialized withdrawal. Test-only signalling
+checks fragmentation, opaque routing, malformed/oversized frames and rejection
+of wildcard subscriptions and retained publishes.
+
+The revised HTTP-only simulation also passed 16/32/64/128 stages. At 128 it took
+459 ms, used 485 ms summed process CPU, sampled 109 MiB end-stage RSS and 18 ms
+event-loop p95. These remain directory participants, not game players.
+No 16/32/64/128 actual-game ramp was attempted: resource and active-gameplay
+qualification remain open. The executor briefly disconnected during an app
+update, then recovered; owned-process state was checked before resuming.
+Final native test processes and fixture connections were stopped.
+
 ## Native build and actual games
 
 The complete Windows target compiled and linked successfully with LLVM 23.1.2,
@@ -90,9 +130,9 @@ provide separate integration evidence.
 
 ## Remaining gates
 
-Not established: encrypted Internet tunnel selection/join, actual browser visual
+Not established: WAN encrypted tunnel reachability, actual browser visual
 interaction or URI handoff, Linux/Android compilation, WAN/CGNAT reachability,
-public-service TLS/identity/generation fencing, host crash/restart recovery with
+public-service TLS/identity/generation fencing, host crash recovery with
 real games, dedicated hosting, NAS load, or 128 active players. This brief
 two-player run did not exercise movement/combat/vehicles, authoritative damage
 agreement, bandwidth, tick latency, packet loss or desync recovery. No capacity

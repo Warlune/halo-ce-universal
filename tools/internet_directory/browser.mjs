@@ -1,20 +1,32 @@
-import { API_VERSION, compatible, INVITE, LISTING_ID } from './protocol.mjs';
+import { API_VERSION, compatible, INVITE, LISTING_ID, validateListing, validateFilters, readBoundedJSON, MAX_LEASE_MS } from './protocol.mjs';
 
-export async function browse(fetcher, versions) {
-  const response = await fetcher(`/v1/listings?${new URLSearchParams(versions)}`, { cache: 'no-store', redirect: 'error' });
-  if (!response.ok) throw new Error('Directory unavailable');
-  const data = await response.json();
-  if (data.apiVersion !== API_VERSION || !Array.isArray(data.listings)) throw new Error('Unsupported directory');
-  return data.listings.filter(item => item && LISTING_ID.test(item.id) && compatible(item, versions));
+export async function browse(fetcher, versions, now = Date.now) {
+  const response = await fetcher(`/v1/listings?${validateFilters(versions)}`, { cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(3000) });
+  if (!response.ok) { await response.body?.cancel(); throw new Error('Directory unavailable'); }
+  const data = await readBoundedJSON(response, 256 * 1024);
+  if (!data || data.apiVersion !== API_VERSION || Object.keys(data).length !== 2 ||
+      !Array.isArray(data.listings) || data.listings.length > 256) throw new Error('Unsupported directory');
+  const ids = new Set(), result = [], time = now();
+  for (const item of data.listings) {
+    if (!item || typeof item !== 'object' || Array.isArray(item) || typeof item.id !== 'string' ||
+        !LISTING_ID.test(item.id) || ids.has(item.id) || Object.hasOwn(item, 'invite') ||
+        !Number.isSafeInteger(item.expiresAt) || item.expiresAt > time + MAX_LEASE_MS) throw new Error('Invalid directory metadata');
+    const { id, expiresAt, ...metadata } = item;
+    validateListing({ ...metadata, invite: `halo://join/${'0'.repeat(64)}` });
+    ids.add(id);
+    if (expiresAt > time && compatible(item, versions) && (!versions.map || item.map === versions.map)) result.push(item);
+  }
+  return result;
 }
 
 export async function resolveJoin(fetcher, id, versions, now = Date.now) {
   if (!LISTING_ID.test(id)) throw new Error('Invalid listing');
-  const response = await fetcher(`/v1/listings/${id}/join?${new URLSearchParams(versions)}`, { cache: 'no-store', redirect: 'error' });
-  if (!response.ok) throw new Error('Host unavailable, full or incompatible; refresh the list');
-  const value = await response.json();
-  if (value.apiVersion !== API_VERSION || !INVITE.test(value.invite) ||
-      !Number.isFinite(value.expiresAt) || value.expiresAt <= now()) throw new Error('Invalid or expired invite');
+  const response = await fetcher(`/v1/listings/${id}/join?${validateFilters(versions)}`, { cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(3000) });
+  if (!response.ok) { await response.body?.cancel(); throw new Error('Host unavailable, full or incompatible; refresh the list'); }
+  const value = await readBoundedJSON(response, 1024);
+  const time = now();
+  if (!value || Object.keys(value).length !== 3 || value.apiVersion !== API_VERSION || typeof value.invite !== 'string' || !INVITE.test(value.invite) ||
+      !Number.isSafeInteger(value.expiresAt) || value.expiresAt <= time || value.expiresAt > time + MAX_LEASE_MS) throw new Error('Invalid or expired invite');
   return value;
 }
 

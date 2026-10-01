@@ -13,13 +13,15 @@ export class HostRegistration {
     this.timeoutMs = timeoutMs;
     this.registered = false;
     this.pending = Promise.resolve();
+    this.revision = 0;
   }
 
   update(snapshot) {
     // Serialize heartbeats and withdrawals so an older heartbeat cannot race a
     // private/stopped snapshot and restore a withdrawn listing.
     const copy = { ...snapshot };
-    const operation = this.pending.then(() => this.apply(copy));
+    const revision = ++this.revision;
+    const operation = this.pending.then(() => revision === this.revision ? this.apply(copy) : false);
     this.pending = operation.catch(() => {});
     return operation;
   }
@@ -54,7 +56,7 @@ export class HostRegistration {
       body: listing ? JSON.stringify(listing) : undefined,
     });
     // Do not echo response bodies, addresses or credentials into logs.
+    await response.body?.cancel();
     if (!response.ok) throw new Error(`Directory update failed (${response.status})`);
-    await response.arrayBuffer();
   }
 }
