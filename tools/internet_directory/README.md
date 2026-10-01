@@ -26,6 +26,10 @@ Subsequent [bounded profiling](PROFILING.md) found missing null-renderer frame
 pacing. The fix reduced measured two-game CPU about 94% with simulation still at
 30 Hz. No higher count was tested; native acceptance is paused during live play.
 
+A separate [read-only lobby roster prototype](../lobby/README.md) provides paged
+access to existing player data without changing the wire protocol. Its model
+tests and Windows compile pass; in-game visual/input acceptance remains pending.
+
 The design target is **128 simultaneous active players**. The number 128 in a
 listing is a permitted capacity field, not evidence that gameplay works at that
 size. See [the implementation and capacity plan](PLAN.md).

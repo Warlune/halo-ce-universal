@@ -156,6 +156,13 @@ Keep this work separate from the current lifecycle/load-validation increment.
 A future versioned directory schema can carry mod compatibility metadata;
 no mod manager, loader or executable-mod support is implemented by this plan.
 
+The next lightweight increment implements a read-only paged roster from existing
+session data; its pure 128-slot model passes and the Windows build links, while
+native visual/input testing remains paused during live play. See
+[the roster prototype](../lobby/README.md) and [selection/voting compatibility
+plan](../lobby/VOTING_PLAN.md). No ready/vote wire fields or version changes are
+introduced. Existing host selection and direct invites retain their paths.
+
 ## Possible later NAS host
 
 Keep the implementation Linux-compatible. Allocated vCPU is not measured CPU

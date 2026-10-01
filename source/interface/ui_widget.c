@@ -677,6 +677,7 @@ struct widget_instance;
 #include "text/text_group.h"
 #include "text/unicode.h"
 #include "ui_widget.h"
+#include "interface/lobby_roster.h"
 
 /* ---------- constants */
 
@@ -5975,6 +5976,7 @@ void render_ui_widgets(
 {
 	rectangle2d bounds;
 	long widget_index;
+	boolean roster_active = FALSE;
 
 	match_assert(
 		"c:\\halo\\SOURCE\\interface\\ui_widget.c",
@@ -5984,6 +5986,23 @@ void render_ui_widgets(
 		local_player_index == NONE ? 0 : local_player_index;
 	if (bink_playback_ui_rendering_inhibited())
 		return;
+	/* This view reads the existing lobby snapshot. No new network messages or
+	widget assets; only the first local view owns its keyboard paging state. */
+	if (local_player_index <= 0)
+	{
+		struct widget_instance *root = widget_globals.active_widgets[0];
+		struct network_game_client *client = global_network_game_client_get();
+		roster_active = root && client && !root->widget_is_error_dialog &&
+			!virtual_keyboard_active() && !progress_bar_is_active() &&
+			!widget_globals.processing_inhibited &&
+			network_game_client_get_state(client, NULL) == 2 && /* pregame */
+			!strcmp(tag_get_name(root->definition_tag_index),
+				"ui\\shell\\main_menu\\multiplayer_type_select\\connected\\pregame\\connected_pregame_screen");
+		for (widget_index = 0; widget_index < MAXIMUM_NUMBER_OF_LOCAL_PLAYERS; widget_index++)
+			if (widget_globals.active_widgets[widget_index] && widget_globals.active_widgets[widget_index]->widget_is_error_dialog)
+				roster_active = FALSE;
+		lobby_roster_update(roster_active);
+	}
 	if (!virtual_keyboard_active())
 	{
 		local_player_index = PIN(
@@ -6066,6 +6085,8 @@ void render_ui_widgets(
 				}
 			}
 		}
+		if (roster_active)
+			lobby_roster_render();
 		if (widget_globals.fade_to_black >= 0.0f &&
 			widget_globals.fade_to_black <= 1.0f)
 		{
