@@ -49,6 +49,47 @@ Desired matrix:
 | Directory missing/unreachable/private host/direct invite | Same capability rules; no directory dependency |
 | Join or capability loss during a vote | Cancel/invalidate the round and return to host selection |
 
+## Negotiation design decision and review gates
+
+Keep the runtime feature disabled. The source review establishes an announcement
+possibility, not a safe bootstrap channel:
+
+- `network_game_client_advertised_game_compatible` requires the existing netcode
+  version and distributed flag. Ignoring other flag bits at this one check does
+  not prove that every legacy decoder safely ignores a new payload.
+- `network_messages.c` uses fixed packet definitions and schema 1. Unknown
+  structure creation reaches an assertion; decoding is delegated to the packet
+  group decoder. UDP unknown-message rejection alone does not establish reliable
+  stream framing or backward compatibility.
+- `halo_port_limits.h` requires version coordination when changing what machines
+  send. No reserved bit, packet ID or reliable-stream extension is allocated here.
+
+A future adapter must default each authenticated connection to capability unknown.
+Only an explicitly supported bootstrap, reviewed against both old and new
+implementations, may move it to confirmed. Bind confirmation to the current
+connection, session epoch, exact vote revision and owned slot generations; never
+infer it from an advertisement, directory entry, player name or cached prior
+connection. A host announcement alone cannot confirm client support. Do not
+send probes to legacy peers to discover whether they tolerate them.
+
+The proposed state transitions are unknown -> confirmed or unsupported, with
+connection replacement/disconnect clearing confirmation. All active participants
+must be confirmed for the same revision and the host must opt in before a round
+opens. Timeout, a new unknown participant, capability loss or catalog/rule change
+cancels the round and restores ordinary manual host selection. No failure in the
+optional feature may reject an otherwise valid ordinary invite. Until a safe
+bootstrap exists, remain disabled; a separately selected versioned mode is the
+fallback design, not an automatic upgrade.
+
+Before implementing traffic, record the exact envelope/framing, bounds, packet
+allocation and version-policy agreement; trace both peers' parsers end to end;
+then test old-host/new-client, new-host/old-client, mixed and all-new combinations
+with direct invites and LAN discovery. Compare base join/settings/countdown
+transcripts to the baseline and test truncation, unknown revisions, reconnect,
+timeout and replay. These gates are not satisfied by the offline codec tests.
+No transport, bootstrap probe, capability sender or runtime vote toggle is added
+by this review. Native acceptance remains blocked on an idle window.
+
 ## Bounded host-authoritative state model
 
 The pure C prototype in `port/linux/game/lobby_vote_model.c` implements the
@@ -102,36 +143,44 @@ Ballots bind to a separate 128-bit session identifier, round/revision, player sl
 and generation. The authenticated caller machine is an API argument obtained
 from the connection, **not a field trusted from the ballot**. The model rejects
 ownership/session/generation mismatch, stale rounds, late votes and ineligible
-choices. Replacing one's vote does not add another vote. Closing is idempotent;
+choices. Each player advances a nonzero 32-bit sequence when changing their
+choice. A lower sequence is rejected; an equal sequence succeeds only for the
+same choice. Delayed/replayed replacements cannot revert a newer vote. Sequence
+wrap is forbidden within a round; exhaustion requires a fresh round. The host
+resets sequence state on cancellation/begin. Replacing one's vote does not add another vote. Closing is idempotent;
 ties use candidate order and no ballots returns no change. A changed authoritative
 revision or eligibility intersection cancels even a closed result before use.
 The adapter must increment the revision on membership/catalog/rule changes.
 
-The provisional standalone ballot codec is exactly 40 bytes in network byte
+The provisional standalone ballot codec is exactly 44 bytes in network byte
 order; it is **not registered with any game packet type or emitted by any code**:
 
 | Offset | Field |
 | ---: | --- |
 | 0-3 | Literal `HVOT` |
-| 4-7 | Revision 1, reserved zero, unsigned 16-bit total length 40 |
+| 4-7 | Revision 2, reserved zero, unsigned 16-bit total length 44 |
 | 8-23 | Separate nonzero session identifier; never an invite/credential |
 | 24-27 | Nonzero round ID |
 | 28-31 | Nonzero roster/catalog revision |
 | 32-33 | Player slot 0-127 |
 | 34-35 | Candidate index 0-7 |
 | 36-39 | Nonzero slot generation |
+| 40-43 | Nonzero monotonically increasing per-player ballot sequence |
 
 The codec rejects unknown versions/reserved bits, truncation, trailing bytes,
 out-of-range indices and zero identity fields. Decode failure clears its output.
 It provides no authentication or negotiation by itself. Candidate catalogs,
 capability messages, round announcements and result serialization are not
 implemented. This provisional format can change after the compatibility review;
-it is not a claim of a supported public protocol.
+it is not a claim of a supported public protocol. Revision 2 adds sequence
+ordering to the earlier offline-only revision 1 and rejects its 40-byte form.
+This does not change packet schema 1, discovery format 2 or game netcode 9.
 
 The actual C model and codec compiled with `-Wall -Wextra -Werror` to freestanding
-WebAssembly and passed **251 assertions**, covering 128 individual ballots,
+WebAssembly and passed **270 assertions**, covering 128 individual ballots,
 ownership and reused generations, legacy peers, inactive/spectator eligibility,
 split-screen ownership, candidate intersections, replacements/duplicates,
+out-of-order and conflicting replay rejection, sequence wrap rejection,
 deadline boundaries, ties/abstention, roster cancellation, overflow/invalid
 limits, exact endian layout, every truncated length, trailing bytes, malformed
 headers/indices/identities and buffer canaries. No game, socket or asset was used.

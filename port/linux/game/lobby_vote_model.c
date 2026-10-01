@@ -18,7 +18,10 @@ void lobby_vote_cancel(struct lobby_vote_round *round)
 	int i;
 	if (!round) return;
 	round->status = LOBBY_VOTE_CANCELLED; round->winner = -1;
-	for (i = 0; i < LOBBY_VOTE_PLAYERS; i++) round->ballots[i] = -1;
+	for (i = 0; i < LOBBY_VOTE_PLAYERS; i++) {
+		round->ballots[i] = -1;
+		round->last_sequence[i] = 0;
+	}
 }
 int lobby_vote_begin(struct lobby_vote_round *out, const unsigned char session[16],
 	uint32_t round, uint32_t revision, uint64_t now, unsigned duration_ms,
@@ -57,7 +60,7 @@ int lobby_vote_cast(struct lobby_vote_round *round, const struct lobby_ballot *b
 	const struct lobby_vote_player *player;
 	if (!round || round->status != LOBBY_VOTE_OPEN) return 0;
 	if (current_revision != round->revision) { lobby_vote_cancel(round); return 0; }
-	if (!ballot || now < round->opened || now >= round->deadline || authenticated_machine < 0 ||
+	if (!ballot || !ballot->sequence || now < round->opened || now >= round->deadline || authenticated_machine < 0 ||
 		authenticated_machine >= LOBBY_VOTE_PLAYERS || ballot->player >= (unsigned)round->count ||
 		ballot->option >= (unsigned)round->options || !(round->eligible_options & (1u << ballot->option)) ||
 		ballot->round != round->round || ballot->revision != round->revision ||
@@ -65,7 +68,11 @@ int lobby_vote_cast(struct lobby_vote_round *round, const struct lobby_ballot *b
 	player = &round->players[ballot->player];
 	if (!player->active || !player->can_vote || player->machine != authenticated_machine ||
 		ballot->generation != player->generation) return 0;
+	if (ballot->sequence < round->last_sequence[ballot->player]) return 0;
+	if (ballot->sequence == round->last_sequence[ballot->player])
+		return round->ballots[ballot->player] == (int)ballot->option;
 	round->ballots[ballot->player] = (int)ballot->option; /* replace own ballot, never add a second */
+	round->last_sequence[ballot->player] = ballot->sequence; /* no wrap within a round */
 	return 1;
 }
 int lobby_vote_close(struct lobby_vote_round *round, uint32_t current_revision,
@@ -86,7 +93,7 @@ int lobby_vote_close(struct lobby_vote_round *round, uint32_t current_revision,
 
 static int ballot_valid(const struct lobby_ballot *ballot)
 {
-	return ballot && session_valid(ballot->session) && ballot->round && ballot->revision && ballot->generation &&
+	return ballot && session_valid(ballot->session) && ballot->round && ballot->revision && ballot->generation && ballot->sequence &&
 		ballot->player < LOBBY_VOTE_PLAYERS && ballot->option < LOBBY_VOTE_OPTIONS;
 }
 static void write32(unsigned char *p, uint32_t value)
@@ -103,12 +110,13 @@ int lobby_ballot_encode(unsigned char *out, unsigned size, const struct lobby_ba
 	int i;
 	if (!out || size != LOBBY_BALLOT_BYTES || !ballot_valid(ballot)) return 0;
 	out[0] = 'H'; out[1] = 'V'; out[2] = 'O'; out[3] = 'T';
-	out[4] = 1; out[5] = 0; out[6] = 0; out[7] = LOBBY_BALLOT_BYTES;
+	out[4] = 2; out[5] = 0; out[6] = 0; out[7] = LOBBY_BALLOT_BYTES;
 	for (i = 0; i < 16; i++) out[8 + i] = ballot->session[i];
 	write32(out + 24, ballot->round); write32(out + 28, ballot->revision);
 	out[32] = 0; out[33] = (unsigned char)ballot->player;
 	out[34] = 0; out[35] = (unsigned char)ballot->option;
 	write32(out + 36, ballot->generation);
+	write32(out + 40, ballot->sequence);
 	return 1;
 }
 int lobby_ballot_decode(struct lobby_ballot *out, const unsigned char *data, unsigned size)
@@ -117,13 +125,14 @@ int lobby_ballot_decode(struct lobby_ballot *out, const unsigned char *data, uns
 	int i;
 	if (!out) return 0;
 	for (i = 0; i < 16; i++) out->session[i] = 0;
-	out->round = out->revision = out->generation = out->player = out->option = 0;
+	out->round = out->revision = out->generation = out->sequence = out->player = out->option = 0;
 	if (!data || size != LOBBY_BALLOT_BYTES || data[0] != 'H' || data[1] != 'V' ||
-		data[2] != 'O' || data[3] != 'T' || data[4] != 1 || data[5] || data[6] ||
+		data[2] != 'O' || data[3] != 'T' || data[4] != 2 || data[5] || data[6] ||
 		data[7] != LOBBY_BALLOT_BYTES || data[32] || data[34]) return 0;
 	for (i = 0; i < 16; i++) value.session[i] = data[8 + i];
 	value.round = read32(data + 24); value.revision = read32(data + 28);
 	value.player = data[33]; value.option = data[35]; value.generation = read32(data + 36);
+	value.sequence = read32(data + 40);
 	if (!ballot_valid(&value)) return 0;
 	*out = value;
 	return 1;

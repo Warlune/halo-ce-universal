@@ -32,7 +32,7 @@ distributed `client_ready` message concerns synchronization, not a player's
 lobby consent. No fabricated ready indicator is displayed. Ready/voting UX
 requires a separate negotiated feature; see [VOTING_PLAN.md](VOTING_PLAN.md).
 An isolated voting-state/eligibility model and provisional ballot codec now pass
-251 compiled assertions. They have no UI, network or gameplay callers; voting
+270 compiled assertions. They have no UI, network or gameplay callers; voting
 is not available in the game and existing peers receive no new messages.
 
 ## Implementation and evidence

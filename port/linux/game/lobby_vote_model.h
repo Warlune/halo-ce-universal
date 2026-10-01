@@ -5,7 +5,7 @@
 /* Pure prototype, not connected to game UI, sockets or existing packet IDs.
    The host adapter must derive ownership/capability/eligibility from its own
    session state. The codec below is a test contract, not an enabled protocol. */
-enum { LOBBY_VOTE_PLAYERS = 128, LOBBY_VOTE_OPTIONS = 8, LOBBY_BALLOT_BYTES = 40 };
+enum { LOBBY_VOTE_PLAYERS = 128, LOBBY_VOTE_OPTIONS = 8, LOBBY_BALLOT_BYTES = 44 };
 enum { LOBBY_VOTE_DISABLED, LOBBY_VOTE_OPEN, LOBBY_VOTE_CLOSED, LOBBY_VOTE_CANCELLED };
 struct lobby_vote_player {
 	int active, machine, supported, can_vote;
@@ -14,7 +14,7 @@ struct lobby_vote_player {
 };
 struct lobby_ballot {
 	unsigned char session[16];
-	uint32_t round, revision, generation;
+	uint32_t round, revision, generation, sequence;
 	unsigned player, option;
 };
 struct lobby_vote_round {
@@ -25,6 +25,7 @@ struct lobby_vote_round {
 	int status, winner, count, options;
 	struct lobby_vote_player players[LOBBY_VOTE_PLAYERS];
 	int ballots[LOBBY_VOTE_PLAYERS];
+	uint32_t last_sequence[LOBBY_VOTE_PLAYERS];
 };
 
 int lobby_vote_begin(struct lobby_vote_round *out, const unsigned char session[16],
