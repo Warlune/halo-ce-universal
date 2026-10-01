@@ -1,0 +1,6 @@
+# Future local operator credentials, captures and private experimental state.
+*.local.json
+*.log
+.state/
+captures/
+results/

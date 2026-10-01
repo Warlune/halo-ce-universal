@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Halo Internet directory — local prototype</title>
+<h1>Halo Internet directory</h1>
+<p>Local prototype. Listings describe a host; they do not prove network reachability.</p>
+<p>Browse without connecting. Select a host, then open its current invite and choose the match in Halo's System Link menu.</p>
+<p>Demo listings are simulated. Do not open demo invites. Opening a real invite may hand it to your already running game.</p>
+<label>System Link format <input id="systemLinkVersion" type="number" min="1" max="65535" value="2"></label>
+<label>Netcode version <input id="netcodeVersion" type="number" min="1" max="65535" value="9"></label>
+<button id="refresh" type="button">Refresh</button>
+<p id="status" role="status"></p>
+<ul id="listings"></ul>
+<div id="join"></div>
+<script type="module" src="/browser.mjs"></script>
+</html>
