@@ -14,6 +14,7 @@ and the debug keyboard that the game's console reads.
 #include "gl.h"
 #include "port_config.h"
 #include "p2p.h"
+#include "host_control.h"
 #include "xiso.h"
 
 #include <SDL3/SDL.h>
@@ -84,6 +85,7 @@ BOOL platform_sdl_initialize(void)
 	/* The event/timer owner also exists for the null renderer, which never
 	creates a window. Timed automated shutdown must still run on this thread. */
 	platform_event_thread = SDL_GetCurrentThreadID();
+	host_control_initialize();
 #ifndef HALO_ANDROID
 	/* found (or offered to the player, platform_offer_game_data) before the
 	game's window opens */
@@ -722,6 +724,11 @@ void platform_pump_events(void)
 
 	if (SDL_GetCurrentThreadID() != platform_event_thread)
 		return;
+	if (host_control_should_stop())
+	{
+		platform_log("Host control: graceful shutdown requested");
+		exit(EXIT_SUCCESS);
+	}
 	if (exit_ticks == (Uint64)-1)
 	{
 		double seconds = config_real("debug.exit_after");

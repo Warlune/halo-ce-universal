@@ -70,10 +70,14 @@ Source baseline:
    then matches its advertisement/identity deliberately. Preserve LAN discovery
    and existing invite workflows. Test incompatible versions, stale/full hosts,
    directory outages and cancellation. Coordinate around PR #20's current state.
-5. **Unattended hosting lifecycle (first bounded piece tested).** The no-window
+5. **Unattended hosting lifecycle (bounded local prototype tested).** The no-window
    event timer now permits clean shutdown. Two sequential null-renderer hosts
    heartbeat/withdraw normally and reuse a listing ID with a fresh invite.
-   Crash recovery, external operator stop and production supervision remain open.
+   A bounded owned-process supervisor now verifies one crash/restart, fresh
+   invite under the same ID, restart exhaustion, actual lease expiry, explicit
+   stdin stop and owner-pipe EOF shutdown. Private replacement and direct invites
+   with disabled/unavailable/malformed/expired directories also pass. Persistent
+   operator identity, generation fencing and production supervision remain open.
    Design a real Linux dedicated path with no
    local human player, map/variant rotation, orderly shutdown, restart recovery,
    persistent listing identity and health reporting. Identify dependencies on
@@ -99,7 +103,7 @@ end-to-end encrypted tunnel reachability are unverified.
 | --- | --- | --- |
 | Local directory 16/32/64/128 | Register, heartbeat, browse, select, withdraw | Directory correctness and local HTTP overhead only |
 | Game connection 16/32/64/128 total players | Host plus 15/31/63/127 stand-ins; join/leave/rejoin, lobby and expiry | Protocol connection/lobby capacity, not active gameplay |
-| Active local 2, then 16/32/64/128 | Real simulation clients with movement, aim/fire, kills/respawn, pickups and vehicles | Functional simulation and per-process cost; same-host resource contention remains |
+| Active local 2, then bounded resource-qualified increases | Real simulation clients with movement, aim/fire, kills/respawn, pickups and vehicles | Functional simulation and per-process cost; same-host resource contention remains |
 | Active remote 16/32/64/128 | Multiple real networks and clients; combat plus loss/recovery and map rotation | Actual Internet hosting acceptance at each level |
 
 Before running the existing stand-in script, review it and bind an isolated host
@@ -109,6 +113,14 @@ fixed runtime, an owned process list, graceful cleanup, memory headroom and
 CPU/tick-latency stop thresholds derived from a two-client baseline. Ask for an
 idle testing window if the live game prevents isolation. Obtain additional
 clients/volunteers before claiming remote capacity.
+
+Current qualification: two scripted active games passed; four full instances
+hit the sustained CPU guard during startup and were stopped. Do not increase
+full-game process counts on this desktop from that failed stage. One host plus
+15 idle protocol stand-ins passed a 30-second match hold, but peak system CPU
+reached 83%, so the protocol ramp also stopped before 32/64/128. Profiling or an
+explicitly arranged lower-load/distributed test environment is the next capacity
+step. See [VALIDATION.md](VALIDATION.md); no 128-active-player claim is supported.
 
 Collect at every level: process and per-core CPU; working set/private bytes;
 per-host and per-client bytes/s and packets/s; measured simulation tick target and
@@ -124,6 +136,18 @@ movement/combat, vehicle interactions, agreement of authoritative health/deaths,
 stable map rotation and recovery from client loss. Establish explicit time and
 latency budgets from measured tick settings before the full run; passing an idle
 lobby does not satisfy this gate. Any failed stage stops the ramp for profiling.
+
+## Accepted later product requirements
+
+After reliable hosting, replace development-script setup with an approachable
+host/browse/join flow that minimizes TOML editing and invite copying. Add custom
+match/map/mode setup and a scalable, scrollable roster showing every player,
+teams and ready state. The reported four-entry lobby display is a UI concern
+distinct from actual player capacity; verify its presentation limits separately.
+Map/rule eligibility, voting, countdown and rotation must be server-authoritative.
+Keep this work separate from the current lifecycle/load-validation increment.
+A future versioned directory schema can carry mod compatibility metadata;
+no mod manager, loader or executable-mod support is implemented by this plan.
 
 ## Possible later NAS host
 
@@ -150,6 +174,11 @@ privacy-preserving operational metrics. Treat invites as public only after the
 host explicitly opts in. Never publish private sessions automatically. Persist
 only necessary identity data; do not collect hardware IDs. Explain that a copied
 public invite survives directory withdrawal until the game invalidates it.
+
+Directory discovery must remain additive: ordinary direct invites and private
+hosting remain available when discovery is disabled, unavailable, malformed or
+expired. Keep these regressions in acceptance tests; never make registration a
+prerequisite for encrypted peer connections or local System Link play.
 
 No public service deployment or paid dependency is authorized by this plan.
 Production TLS/identity/persistence and independent security review remain open.

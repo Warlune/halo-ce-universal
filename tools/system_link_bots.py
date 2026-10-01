@@ -23,6 +23,8 @@ The protocol (network_messages.c): a message is a 2-byte big-endian header
 version byte, the fields big-endian (bytes and raw fields as they are), and
 the packet type in a trailing byte. The native builds send the game settings
 record in pieces of HALO_PORT_NETWORK_GAME_SETTINGS_FRAGMENT_SIZE bytes.
+Current hosts restrict immediate-start requests to their own local machine;
+configure the disposable host's automatic start delay for unattended tests.
 """
 
 import argparse
@@ -38,6 +40,9 @@ import time
 SERVER_PORT = 0x141E
 CLIENT_PORT = 0x141F
 MESSAGE_TYPE_PACKET = 3
+# The serialized packet schema stays 1 (NETWORK_GAME_MESSAGE_DEFINITION and
+# create_network_game_message). Discovery compatibility is separately 2, and
+# distributed netcode separately 9; do not substitute either here.
 PACKET_VERSION = 1
 JOIN_TOKEN = b"message in a bottle"[:16]  # network_game_generate_join_game_token (DEBUG builds)
 SETTINGS_FRAGMENT_SIZE = 0xE00
@@ -188,7 +193,9 @@ class Machine:
                 time.sleep(0.001)
 
     def joined(self):
-        self.send(message(CLIENT_JOIN_GAME_REQUEST, wide(self.name, 32) + JOIN_TOKEN))
+        # The current join payload includes a 32-byte hardware-id field. Stand-ins leave
+        # it empty; never read or reuse the test computer's real identifier.
+        self.send(message(CLIENT_JOIN_GAME_REQUEST, wide(self.name, 32) + JOIN_TOKEN + bytes(32)))
         self.state = "joining"
 
     def receive(self):
@@ -342,7 +349,14 @@ def main():
                     machine.connect()
                     selector.register(machine.tcp, selectors.EVENT_READ | selectors.EVENT_WRITE, machine)
                     next_connect_time = now + 1.0 / options.join_rate
-            for key, events in selector.select(timeout=0.005):
+            # Windows select() rejects empty socket sets while every pending
+            # connection is waiting for its retry time (e.g. host startup).
+            if selector.get_map():
+                selected = selector.select(timeout=0.005)
+            else:
+                time.sleep(0.005)
+                selected = []
+            for key, events in selected:
                 machine = key.data
                 if machine.state == "connecting" and events & selectors.EVENT_WRITE:
                     error = machine.tcp.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)

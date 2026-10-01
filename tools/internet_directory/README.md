@@ -14,6 +14,14 @@ tunnel and a real match through an ephemeral local signalling fixture. WAN
 reachability and desktop URI handoff remain untested. See [native integration](NATIVE_INTEGRATION.md),
 [measured results](VALIDATION.md), and [Windows prerequisites](WINDOWS_BUILD.md).
 
+Bounded local supervision now verifies crash/restart, stable listing identity,
+fresh invites, expiry, explicit stop and owner-pipe EOF cleanup. Direct encrypted
+invites still work when the directory is disabled, unavailable, malformed or
+expired. Private hosting remains unlisted and makes zero directory requests.
+Two scripted active games passed; a four-game attempt hit its CPU guard. One
+host plus 15 idle protocol stand-ins passed, but its CPU peak stopped further
+scaling. These development results do not establish 128-player active capacity.
+
 The design target is **128 simultaneous active players**. The number 128 in a
 listing is a permitted capacity field, not evidence that gameplay works at that
 size. See [the implementation and capacity plan](PLAN.md).
@@ -25,6 +33,7 @@ Use an existing Node.js 24 runtime. No `npm install` or package dependencies:
 ```text
 node --test --test-isolation=none tools/internet_directory/directory.test.mjs
 node --test --test-isolation=none tools/internet_directory/local_signal_fixture.test.mjs
+node --test --test-isolation=none tools/internet_directory/supervisor.test.mjs
 node tools/internet_directory/simulate.mjs
 node tools/internet_directory/demo.mjs --demo
 ```
@@ -35,8 +44,9 @@ the synthetic invite in Halo.** The fixture is not a playable game. Ctrl+C
 withdraws the listing and closes the server. Starting without `--demo` creates
 an empty directory. Nothing opens a browser or game automatically.
 
-The test option disables Node's worker-process isolation because the development
-sandbox blocks child process spawning. Tests still use real loopback HTTP.
+The test option disables Node's worker-process isolation. Directory tests still
+use real loopback HTTP. Supervisor tests launch owned Node fixture processes and
+require an approved environment where child spawning is permitted.
 `simulate.mjs` runs stages of 16/32/64/128 registered synthetic hosts and simulated
 browser clients, at most 16 concurrent HTTP operations. Its guards stop the run
 after 30 seconds or when observed process RSS exceeds 512 MiB. It starts zero Halo
@@ -135,7 +145,7 @@ claiming a public-to-private transition revokes access.
   restrictive CSP, text-only rendering of host labels, strict Halo invite scheme.
 - Host client permits HTTPS origins; plain HTTP is allowed only for literal
   `127.0.0.1`. Credentials in directory URLs and redirects are rejected.
-- No request logs, game-log scraping, personal configuration, assets, clipboard,
+- The service and registration adapter use no request logs, game-log scraping, personal configuration, assets, clipboard,
   device identifiers, public address lookup, router changes or relay activity.
 
 This is not an Internet-hardened service. Public operation additionally needs TLS

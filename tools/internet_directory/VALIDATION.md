@@ -4,6 +4,76 @@ Baseline: `c55e4e2b9d90550b0e761eb78dfe9d7c74880cb9`.
 No public service, firewall/router change or upstream PR is part of this result.
 Live game files, personal saves and unrelated systems were not modified.
 
+## Bounded supervision, compatibility and resource qualification
+
+The Windows target rebuilt successfully with opt-in stdin control. The new
+`native_supervision_test.mjs` passed in 61384 ms: an owned host crashed, restarted
+once after 500 ms with the same listing ID and a different process invite, then
+exhausted its restart budget after a second intentional crash. Its real lease
+expired 44997 ms later and Join returned 404. A subsequent host withdrew on
+explicit `stop`; a private replacement stayed absent and stopped on control-pipe
+EOF. Both normal stops used shutdown handlers without forced termination.
+Peak sampled owned working set was 85 MiB. This is a bounded development
+supervisor with a local player, not a production dedicated service.
+
+`native_invite_regression.mjs` passed all four direct encrypted-join cases with
+ordinary mutual LAN discovery disabled:
+
+| Directory condition | Two real games reached simulation | Runtime ms |
+| --- | --- | ---: |
+| Disabled | Yes; zero directory requests and no public listing | 21803 |
+| Unavailable | Yes; registration connection failures exercised | 21385 |
+| Malformed response | Yes; browser rejected invalid JSON | 21323 |
+| Listing expired | Yes; directory Join returned 404 first | 21429 |
+
+Only disposable fixture invites were read in memory from their own isolated
+logs for this compatibility test. Production registration uses native snapshots.
+A directory lease expiring does not revoke a still-running process's invite.
+These checks used local encrypted transport, not WAN or desktop URI handoff.
+
+Resource qualification used one-second system CPU/free-memory samples and
+periodic owned-process working-set/CPU samples. Entry required system CPU below
+70% and at least 8 GiB free; stop guards were CPU above 85% for three samples,
+less than 4 GiB free, repeated event-loop stalls over 500 ms or combined owned
+working set over 2 GiB. These are development safety bounds, not server sizing.
+All full-game processes used the null renderer and isolated local configuration.
+
+| Exercise | Outcome | Runtime ms | Peak system CPU | Peak owned working set MiB | Minimum free GiB |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 2 real scripted active players | Passed | 54690 | 55% | 181 | 13.66 |
+| 4 real game instances | CPU guard stopped startup | 18488 | 100% | 345 | 12.31 |
+| 1 host + 1 idle protocol stand-in | Passed | 34710 | 31% | 105 | 19.07 |
+| 1 host + 15 idle protocol stand-ins | Passed | 51243 | 83% | 107 | 16.74 |
+
+The two active games each produced 35 tick reports, advancing from tick 30 to
+1050 at an observed 29.52 ticks/s. Their local positions changed in 35/31 sampled
+reports; movement, shooting and the upstream forced kill/respawn test ran. Both
+reported a death. Same-tick position differences had p95 0.150 and max 0.169 game
+units over 66 coarse samples. These are debug observations, not an authoritative
+damage/score agreement check or tick-latency measurement. Vehicles were untested.
+
+The four-instance attempt reached four connected players but no gameplay tick
+reports before the guard stopped it. All four stopped gracefully. Total system
+CPU includes other applications; this does not establish a Halo-only CPU cost.
+No higher full-game stage was attempted. The 16-connection protocol run held all
+16 reported players in a match for 30 seconds and produced 31 host tick reports,
+ticks 30-930, observed 30.74 ticks/s from coarse log polling. Its 83% peak system
+CPU left insufficient headroom to increase load; 32/64/128 protocol stages were
+not run. Stand-ins send no distributed player input and cannot establish active
+gameplay capacity. The earlier two-connection protocol run held for 15 seconds.
+
+The stand-in tool was corrected for Windows empty-selector waits and the current
+join payload's 32-byte optional identifier field, filled entirely with zeros.
+It reads no hardware identifier. Serialized packet schema **1**, System Link
+discovery compatibility **2**, and distributed netcode **9** are distinct; no
+native wire protocol was changed.
+
+The final combined Node regression run passed **24 tests, zero failures** in
+2987.9 ms: 16 directory, three signalling and five supervisor tests, including
+restart backoff/exhaustion, cancellation, graceful/EOF stop, forced fallback for
+an intentionally unresponsive owned fixture and the total-lifetime guard.
+No isolated fixture game processes or ownership locks remained afterward.
+
 ## Subsequent encrypted-join and unattended milestone
 
 After `a18d32e9`, the Windows target rebuilt successfully with isolated automated
@@ -25,7 +95,7 @@ Cycle one completed at 30332 ms; both completed at 60643 ms. Both exit codes
 were zero. A preliminary 20-second run exited correctly but was too short for
 the heartbeat assertion after metadata settled; it was extended, not counted
 as a heartbeat pass. The game still creates a local player and this does not
-prove a production dedicated server, crash recovery or supervision.
+prove a production dedicated server. Later crash/supervision evidence is above.
 
 The hardened directory and local signalling fixture passed **19 tests**
 (16 directory + 3 signalling, 771.8 ms). New cases cover duplicate/escaped JSON
@@ -39,8 +109,8 @@ of wildcard subscriptions and retained publishes.
 The revised HTTP-only simulation also passed 16/32/64/128 stages. At 128 it took
 459 ms, used 485 ms summed process CPU, sampled 109 MiB end-stage RSS and 18 ms
 event-loop p95. These remain directory participants, not game players.
-No 16/32/64/128 actual-game ramp was attempted: resource and active-gameplay
-qualification remain open. The executor briefly disconnected during an app
+This HTTP simulation preceded the bounded resource qualification above. Full
+active-gameplay qualification remains open. The executor briefly disconnected during an app
 update, then recovered; owned-process state was checked before resuming.
 Final native test processes and fixture connections were stopped.
 
@@ -132,10 +202,11 @@ provide separate integration evidence.
 
 Not established: WAN encrypted tunnel reachability, actual browser visual
 interaction or URI handoff, Linux/Android compilation, WAN/CGNAT reachability,
-public-service TLS/identity/generation fencing, host crash recovery with
-real games, dedicated hosting, NAS load, or 128 active players. This brief
-two-player run did not exercise movement/combat/vehicles, authoritative damage
-agreement, bandwidth, tick latency, packet loss or desync recovery. No capacity
+public-service TLS/identity/generation fencing, production dedicated hosting,
+NAS load, or 128 active players. The later two-player scripted check covers
+movement/shooting and forced kill/respawn, but not sustained combat, vehicles,
+authoritative damage agreement, bandwidth, tick latency, packet loss or desync
+recovery. No capacity
 claim follows from a listing's 128-player maximum or HTTP simulation.
 See [PLAN.md](PLAN.md) for staged 16/32/64/128 acceptance. Test processes and local
 directory servers exited after their runs. No upstream PR is ready yet.

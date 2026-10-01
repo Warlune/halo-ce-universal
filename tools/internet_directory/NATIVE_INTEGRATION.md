@@ -92,8 +92,9 @@ two sequential 30-second null-renderer hosts against the same in-memory listing
 identity. Each heartbeats and withdraws before normal exit; the replacement's
 invite must differ. The event-pump timer now works without a window because its
 owner is initialized with SDL, before checking the window. This is a bounded
-unattended lifecycle test, not a dedicated server: it still adds a local player,
-does not test crash recovery, and supplies no production service supervisor.
+unattended lifecycle test, not a dedicated server: it still adds a local player
+and supplies no production service supervisor. The separate development
+supervision test below covers bounded crash recovery.
 
 The completed two-game test observed initial default lobby map `carousel`, then
 `bloodgulch`, player count rising to two, lobby -> playing, unchanged-metadata
@@ -103,6 +104,59 @@ The subsequent encrypted-tunnel run also reached a two-player match and clean
 shutdown. These were short lifecycle checks, not movement/combat/vehicle agreement,
 latency measurement, WAN acceptance or 128-player validation. Results and
 remaining gates are in [VALIDATION.md](VALIDATION.md) and [PLAN.md](PLAN.md).
+
+## Owned-process control and bounded qualification
+
+`HALO_HOST_CONTROL_STDIN=1` opts into an anonymous supervisor-owned control pipe.
+An exact `stop` line (LF or CRLF) or EOF requests normal exit on the SDL event
+thread so directory withdrawal runs. Unknown/oversized lines are ignored. EOF
+also stops an orphaned fixture when its supervisor disappears. The input buffer
+is bounded, and the reader performs no game operations itself. The feature is
+off by default and exposes no socket, file-based command channel or service.
+Do not enable it for ordinary interactive stdin use.
+
+`supervisor.mjs` exports `OwnedSupervisor`. It acts only on child-process handles
+it created, with no shell, process-name kill or PID-file adoption. Defaults are
+two restarts, exponential 500-2000 ms delays, a five-second graceful-stop window,
+and a two-minute total lifetime. Constructor bounds cap restarts at three and
+lifetime at five minutes. An unresponsive owned process can be force-stopped
+after its grace period. Stopping cancels pending restarts. This module does not
+install a service or persist identity/credentials.
+
+The following fixtures require the same prepared map source and marker above.
+They copy only `ui`, `carousel` and `bloodgulch` plus the current built executable
+and SDL into separate ignored directories. Each fixture has its own profile,
+config, saves, loopback address and conservative exclusive lock. A leftover lock
+is not automatically stolen. Raw logs contain private test invites; keep them
+local. Resource guards, process deadlines and the game's own exit timer bound
+the tests. Run one native test at a time in an approved execution environment
+that permits child processes:
+
+```text
+node --test --test-isolation=none tools/internet_directory/supervisor.test.mjs
+node tools/internet_directory/native_supervision_test.mjs
+node tools/internet_directory/native_invite_regression.mjs
+node tools/internet_directory/native_load_test.mjs active 2
+```
+
+The supervision fixture exercises crash/restart, stable in-memory listing ID,
+fresh process invites, exhausted restart budget, real 45-second expiry, explicit
+stop, EOF stop and private replacement. The compatibility fixture establishes
+direct encrypted matches with discovery disabled, unreachable, malformed and
+expired. Only that test reads its own disposable logs to obtain direct invites;
+the native integration never scrapes logs. It uses the loopback signalling
+fixture and disables ordinary mutual LAN discovery.
+
+For protocol-only load, set `HALO_TEST_PYTHON` to an existing approved Python
+executable, then run `node tools/internet_directory/native_load_test.mjs protocol 2`
+before individually qualified 16/32/64/128 stages. These are one real idle host
+plus stand-ins, not active players. The separate active mode is hard-capped at
+four real processes and supplies scripted movement/shooting and host-forced
+kill/respawn. Current evidence **stops the active ramp at two** after the four-game
+attempt hit its CPU guard, and **stops the protocol ramp at 16** because sampled
+system CPU peaked at 83%. Do not blindly run higher counts. These local LAN load
+tests do not measure encrypted transport capacity, WAN latency or 128 active
+players. See the measured limits in [VALIDATION.md](VALIDATION.md).
 
 ## Compiled snapshot contract
 
