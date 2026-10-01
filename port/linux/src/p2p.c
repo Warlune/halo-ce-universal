@@ -2428,6 +2428,37 @@ void p2p_set_game_player_counts(int count, int maximum)
 	pthread_mutex_unlock(&p2p_lock);
 }
 
+/* Keep the public copy's size in step with the actual invite format. */
+typedef char p2p_host_invite_size_matches[
+	P2P_HOST_INVITE_SIZE == P2P_LINK_SIZE ? 1 : -1];
+
+int p2p_get_host_snapshot(int public_host, struct p2p_host_snapshot *snapshot)
+{
+	int available = 0;
+
+	if (!snapshot)
+		return 0;
+	memset(snapshot, 0, sizeof(*snapshot));
+	if (public_host != 1)
+		return 0;
+
+	pthread_mutex_lock(&p2p_lock);
+	/* A socket may have closed since the p2p thread last ran update_hosting.
+	Do not return its previous invite during that gap, nor substitute a peer
+	count for a game count before the server has reported its state. */
+	if (p2p.running && p2p.hosting && p2p.hosting_socket >= 0 && p2p.has_token &&
+		p2p.game_player_maximum > 0 && p2p.game_player_maximum <= P2P_MAXIMUM_PEERS + 1 &&
+		p2p.game_player_count >= 0 && p2p.game_player_count <= p2p.game_player_maximum)
+	{
+		snapshot->player_count = p2p.game_player_count;
+		snapshot->maximum_players = p2p.game_player_maximum;
+		memcpy(snapshot->invite, p2p.invite, sizeof(snapshot->invite));
+		available = 1;
+	}
+	pthread_mutex_unlock(&p2p_lock);
+	return available;
+}
+
 /* ---------- UPnP (posix_upnp.c): the router forwards a port here */
 
 /* the router asked, on a thread of its own (it takes seconds) */

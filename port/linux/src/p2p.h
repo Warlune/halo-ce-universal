@@ -77,6 +77,26 @@ are shown). The game's server calls it as they change (calling it with the
 same counts again costs little) */
 void p2p_set_game_player_counts(int count, int maximum);
 
+/* A copied view for a future opt-in directory worker, never a borrowed pointer
+into p2p. Contains no separate machine/hardware identifier or endpoint field. */
+enum
+{
+	P2P_HOST_INVITE_SIZE = 12 + 64 + 1,
+};
+struct p2p_host_snapshot
+{
+	int player_count;
+	int maximum_players;
+	char invite[P2P_HOST_INVITE_SIZE];
+};
+/* Call after p2p_initialize from a worker which does not hold p2p_lock. Only
+public_host == 1 authorizes copying the invite. Returns 1 for a currently
+listening internet host with authoritative game counts; otherwise clears the
+whole output and returns 0. This neither enables publishing nor proves WAN
+reachability. The caller must combine it with authoritative map/state and
+recheck its opt-in before registration. Do not log or persist the snapshot. */
+int p2p_get_host_snapshot(int public_host, struct p2p_host_snapshot *snapshot);
+
 /* the sizes of a Discord user's id and name as kept (with their end), and
 the text kept of either as told: only the characters allowed (digits in an
 id; letters, digits, "_", "." and "-" in a name), no longer than that */

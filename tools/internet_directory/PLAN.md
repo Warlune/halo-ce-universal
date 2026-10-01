@@ -40,7 +40,9 @@ Source baseline:
    versions, players and current invite. Browse without P2P. Resolve only a
    selected host and offer deliberate URI handoff. Unit/HTTP tests and bounded
    16/32/64/128 directory-client exercise. Zero native game modifications.
-2. **Native host lifecycle integration.** Add configuration for an optional
+2. **Native host lifecycle integration.** A synchronized snapshot API is now
+   present but uncompiled, unused and not yet connected to the directory; see
+   [NATIVE_INTEGRATION.md](NATIVE_INTEGRATION.md). Add configuration for an optional
    directory origin and `public_host=false` by default, plus bounded in-memory
    credential delivery. Obtain current invite under P2P synchronization rather
    than logs/clipboard. Combine listening state with authoritative game state,

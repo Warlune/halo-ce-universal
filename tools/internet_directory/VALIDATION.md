@@ -41,6 +41,10 @@ native compilation requires Visual Studio C++ x86 libraries + Windows 10/11 SDK,
 LLVM clang/lld, ninja, and SDL 3.4.16 development files downloaded by configure.
 No repository build/download script was executed and no toolchain was installed.
 
-This change consists only of the experimental tool and its documentation. It
-does not modify native game networking, the settings GUI, game assets or any
-live installation. Test and demo servers close after completion.
+The initial tested commit consists only of the experimental tool and its
+documentation. A subsequent additive native `p2p_get_host_snapshot` API is
+uncompiled and untested, has no caller, and does not publish anything. The tests
+above cover only the JavaScript directory, not this C API. See
+[NATIVE_INTEGRATION.md](NATIVE_INTEGRATION.md) for its outstanding validation.
+The settings GUI, game assets and live installation remain untouched. Test and
+demo servers close after completion.
