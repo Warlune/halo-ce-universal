@@ -27,6 +27,9 @@ There is no per-player lobby-ready boolean in `network_player`. The in-game
 distributed `client_ready` message concerns synchronization, not a player's
 lobby consent. No fabricated ready indicator is displayed. Ready/voting UX
 requires a separate negotiated feature; see [VOTING_PLAN.md](VOTING_PLAN.md).
+An isolated voting-state/eligibility model and provisional ballot codec now pass
+251 compiled assertions. They have no UI, network or gameplay callers; voting
+is not available in the game and existing peers receive no new messages.
 
 ## Implementation and evidence
 
@@ -51,6 +54,9 @@ with a single build worker. No game was launched. **Visual layout, actual F8/
 PgUp/PgDn routing, font clipping, widescreen/controller behavior and native mixed-
 client acceptance remain untested** because the user is playing their live game.
 The source checkout's build was updated; the live executable/settings were not.
+The final lightweight directory/signalling/supervisor suite also passed all
+24 tests in 3854.4 ms. Zero disposable game processes and zero fixture locks
+remained. No native game test ran during this UI/model increment.
 
 ```powershell
 New-Item -ItemType Directory -Force build/lobby-tests | Out-Null

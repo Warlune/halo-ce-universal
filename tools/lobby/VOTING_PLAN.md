@@ -51,7 +51,11 @@ Desired matrix:
 
 ## Bounded host-authoritative state model
 
-Use a pure model first, without attaching it to a socket or native menu:
+The pure C prototype in `port/linux/game/lobby_vote_model.c` implements the
+round/ballot/eligibility logic below, **without any socket or native menu caller**.
+Its eligibility masks are trusted adapter inputs, not filesystem validation or
+client attestations. Installed map/mode catalog discovery and live capability
+negotiation remain unimplemented.
 
 1. The host creates a round scoped to its current session and roster revision,
    with a fresh round ID, monotonic deadline and a bounded candidate list.
@@ -73,6 +77,8 @@ Use a pure model first, without attaching it to a socket or native menu:
    applying the result through the existing host setters. The normal host
    countdown/start gate remains authoritative. Joining/leaving or map/rule
    changes invalidate the round; they cannot implicitly cast or preserve votes.
+   Cancel any old countdown first; apply map/mode/rules as one validated server
+   update, or prove intermediate settings broadcasts cannot start the match.
 7. Rotation follows an explicit host policy between completed matches; it must
    not change a running match, hand authority to clients, or require publishing
    a private session in a directory.
@@ -82,15 +88,63 @@ Final UX still needs mouse/controller navigation, accessible scrolling, every
 player's actual ready state, visible candidate eligibility, countdown/cancel and
 clear host override. No ready state is inferred from being connected.
 
-## Tests before attaching the model
+## Offline implementation and tests
 
-Pure tests must cover zero/128 players, sparse/reused slots, mixed capabilities,
-invalid ownership, candidate intersections, unknown/custom maps, incompatible
-mode/rules, duplicate/replaced/late ballots, ties/abstentions, roster changes and
-idempotent close/cancel. A future serializer needs strict version and length
-bounds, exact fields, integer ranges, truncation/unknown-message rejection and
-replay/session checks. It must be tested against legacy transcripts **before**
-network integration; currently no vote serializer is used by the game.
+The model bounds rounds to 128 player slots, eight candidate combinations and
+5-60 second monotonic deadlines. Every active participant must have an explicit
+supported-capability value. Voting eligibility is separate: spectators/stand-ins
+can be excluded from ballots while their content compatibility still constrains
+candidate selection. The host mask intersects every active participant's mask.
+No common candidate, no eligible voter or any legacy/invalid participant disables
+the round. The caller must build these inputs from authoritative state.
+
+Ballots bind to a separate 128-bit session identifier, round/revision, player slot
+and generation. The authenticated caller machine is an API argument obtained
+from the connection, **not a field trusted from the ballot**. The model rejects
+ownership/session/generation mismatch, stale rounds, late votes and ineligible
+choices. Replacing one's vote does not add another vote. Closing is idempotent;
+ties use candidate order and no ballots returns no change. A changed authoritative
+revision or eligibility intersection cancels even a closed result before use.
+The adapter must increment the revision on membership/catalog/rule changes.
+
+The provisional standalone ballot codec is exactly 40 bytes in network byte
+order; it is **not registered with any game packet type or emitted by any code**:
+
+| Offset | Field |
+| ---: | --- |
+| 0-3 | Literal `HVOT` |
+| 4-7 | Revision 1, reserved zero, unsigned 16-bit total length 40 |
+| 8-23 | Separate nonzero session identifier; never an invite/credential |
+| 24-27 | Nonzero round ID |
+| 28-31 | Nonzero roster/catalog revision |
+| 32-33 | Player slot 0-127 |
+| 34-35 | Candidate index 0-7 |
+| 36-39 | Nonzero slot generation |
+
+The codec rejects unknown versions/reserved bits, truncation, trailing bytes,
+out-of-range indices and zero identity fields. Decode failure clears its output.
+It provides no authentication or negotiation by itself. Candidate catalogs,
+capability messages, round announcements and result serialization are not
+implemented. This provisional format can change after the compatibility review;
+it is not a claim of a supported public protocol.
+
+The actual C model and codec compiled with `-Wall -Wextra -Werror` to freestanding
+WebAssembly and passed **251 assertions**, covering 128 individual ballots,
+ownership and reused generations, legacy peers, inactive/spectator eligibility,
+split-screen ownership, candidate intersections, replacements/duplicates,
+deadline boundaries, ties/abstention, roster cancellation, overflow/invalid
+limits, exact endian layout, every truncated length, trailing bytes, malformed
+headers/indices/identities and buffer canaries. No game, socket or asset was used.
+These tests do not validate installed custom-map content or legacy network
+transcripts. Those remain required before attaching the model to game traffic.
+The Windows target also compiled/linked the module with one build worker. A
+source-reference check found zero UI/network callers of the model or codec;
+no vote packets were transmitted and no game process was launched.
+
+```powershell
+& '<LLVM_DIR>/bin/clang.exe' --target=wasm32-unknown-unknown -std=c11 -O2 -Wall -Wextra -Werror -ffreestanding -fno-builtin -nostdlib '-Wl,--no-entry' '-Wl,--export=run_vote_tests' '-Wl,--export=vote_test_checks' port/linux/game/lobby_vote_model.c tools/lobby/vote_test.c -o build/lobby-tests/vote.wasm
+node tools/lobby/vote_test.mjs
+```
 
 Native testing, mixed-client tests, visual QA and broader capacity runs remain
 paused during live play. See [README.md](README.md) for the explicit pending
