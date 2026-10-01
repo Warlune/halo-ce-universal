@@ -76,8 +76,11 @@ const char *p2p_take_clipboard_text(void);
 are shown). The game's server calls it as they change (calling it with the
 same counts again costs little) */
 void p2p_set_game_player_counts(int count, int maximum);
+/* The game's complete directory metadata, copied together under the P2P lock.
+state: 0 unavailable, 1 lobby, 2 playing. NULL/empty map clears availability. */
+void p2p_set_game_host_state(int count, int maximum, const char *map, int state);
 
-/* A copied view for a future opt-in directory worker, never a borrowed pointer
+/* A copied view for the opt-in directory worker, never a borrowed pointer
 into p2p. Contains no separate machine/hardware identifier or endpoint field. */
 enum
 {
@@ -87,6 +90,8 @@ struct p2p_host_snapshot
 {
 	int player_count;
 	int maximum_players;
+	int state;
+	char map[64];
 	char invite[P2P_HOST_INVITE_SIZE];
 };
 /* Call after p2p_initialize from a worker which does not hold p2p_lock. Only

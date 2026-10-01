@@ -10,7 +10,7 @@ license notices and include no Microsoft game data in contributions.
 [PR #20](https://github.com/cybersecurity/halo-ce-universal/pull/20) was open
 at inspection. It includes a macOS port and System Link source-address/remote
 advertisement work and reports Windows/Linux/Android build testing as outstanding.
-This prototype touches none of its native networking paths. Re-read its current
+This prototype does not change source-address routing or remote advertisements. Re-read its current
 diff before any native discovery change; do not copy or merge its full branch.
 
 Source baseline:
@@ -39,10 +39,11 @@ Source baseline:
    operator-provisioned identity, stable listing ID, heartbeats, expiry, map,
    versions, players and current invite. Browse without P2P. Resolve only a
    selected host and offer deliberate URI handoff. Unit/HTTP tests and bounded
-   16/32/64/128 directory-client exercise. Zero native game modifications.
-2. **Native host lifecycle integration.** A synchronized snapshot API is now
-   present with an isolated C contract test, unused and not yet connected to the directory; see
-   [NATIVE_INTEGRATION.md](NATIVE_INTEGRATION.md). Add configuration for an optional
+   16/32/64/128 directory-client exercise. These tests use no game clients.
+2. **Native host lifecycle integration (local Windows prototype tested).**
+   A synchronized snapshot and default-off loopback worker now publish actual
+   map/state/counts/invite. The Windows build and an isolated two-game lifecycle
+   test pass; see [NATIVE_INTEGRATION.md](NATIVE_INTEGRATION.md). For production, add configuration for an optional
    directory origin and `public_host=false` by default, plus bounded in-memory
    credential delivery. Obtain current invite under P2P synchronization rather
    than logs/clipboard. Combine listening state with authoritative game state,
@@ -51,7 +52,11 @@ Source baseline:
    jitter/backoff, withdraw on close, handle restart and use generation fencing
    to prevent an old host process overwriting a replacement. Fail closed on
    unknown state. Linux and Windows builds and mocked lifecycle tests must pass.
-3. **First actual browser-to-host game.** Isolated development executable/config,
+3. **First actual browser-to-host game (partly tested).** Native registration,
+   selected invite resolution, map/count changes, lobby/playing, periodic
+   heartbeat, graceful withdrawal and a separate two-game local System Link
+   match are verified. This does not establish URI handoff or encrypted tunnel
+   joining. Continue with isolated development executable/config,
    maps data location, saves and logs; updater and UPnP disabled. Do not launch
    while desktop handoff might target the user's live game. Confirm public host
    registration, browse, selected invite resolution, tunnel establishment,

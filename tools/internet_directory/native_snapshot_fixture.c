@@ -10,6 +10,8 @@ static struct
 {
 	int running, hosting, hosting_socket, has_token;
 	int game_player_count, game_player_maximum;
+	int game_host_state;
+	char game_host_map[64];
 	char invite[P2P_LINK_SIZE];
 } p2p;
 
@@ -52,6 +54,8 @@ static void valid_host(void)
 	p2p.hosting_socket = 4;
 	p2p.game_player_count = 1;
 	p2p.game_player_maximum = 128;
+	p2p.game_host_state = 1;
+	p2p.game_host_map[0] = 'm';
 	for (index = 0; index < 12; index++) p2p.invite[index] = prefix[index];
 	for (; index < 76; index++) p2p.invite[index] = 'a';
 }
@@ -77,7 +81,7 @@ int run_snapshot_tests(void)
 		memset(&snapshot, 0x7f, sizeof(snapshot));
 		if (p2p_get_host_snapshot(index, &snapshot) != 0 || !cleared(&snapshot) || locks != 0) return 2;
 	}
-	for (index = 0; index < 9; index++)
+	for (index = 0; index < 12; index++)
 	{
 		valid_host();
 		switch (index)
@@ -91,6 +95,9 @@ int run_snapshot_tests(void)
 		case 6: p2p.game_player_maximum = 129; break;
 		case 7: p2p.game_player_count = -1; break;
 		case 8: p2p.game_player_count = 129; break;
+		case 9: p2p.game_host_state = 0; break;
+		case 10: p2p.game_host_state = 3; break;
+		case 11: p2p.game_host_map[0] = 0; break;
 		}
 		memset(&snapshot, 0x7f, sizeof(snapshot));
 		before = locks;
@@ -103,10 +110,14 @@ int run_snapshot_tests(void)
 		before = locks;
 		if (p2p_get_host_snapshot(1, &snapshot) != 1 || locks != before + 1) return 30;
 		if (snapshot.player_count != index || snapshot.maximum_players != 128) return 31;
+		if (snapshot.state != 1 || snapshot.map[0] != 'm') return 34;
 		if (snapshot.invite[0] != 'h' || snapshot.invite[75] != 'a' || snapshot.invite[76] != 0) return 32;
 		p2p.invite[12] = 'b';
 		if (snapshot.invite[12] != 'a') return 33;
 	}
+	valid_host();
+	p2p.game_host_state = 2;
+	if (!p2p_get_host_snapshot(1, &snapshot) || snapshot.state != 2) return 35;
 	valid_host();
 	p2p.game_player_maximum = 1;
 	if (p2p_get_host_snapshot(1, &snapshot) != 1 || snapshot.maximum_players != 1) return 40;

@@ -473,8 +473,8 @@ symbols in this file:
 
 #include "cache/cache_files.h"
 
-/* port: internet play's Discord presence (port/linux/src/p2p.c) */
-void p2p_set_game_player_counts(int count, int maximum);
+/* port: authoritative state for Discord and opt-in discovery (p2p.c) */
+void p2p_set_game_host_state(int count, int maximum, char const *map, int state);
 
 /* ---------- constants */
 
@@ -1244,7 +1244,7 @@ void network_game_server_dispose(
 		network_game_server_memory_do_not_use_directly_in_use);
 	network_game_server_memory_do_not_use_directly_in_use = FALSE;
 
-	p2p_set_game_player_counts(0, 0);
+	p2p_set_game_host_state(0, 0, NULL, 0);
 	network_event("network server disposed");
 
 	return;
@@ -1307,7 +1307,10 @@ boolean network_game_server_idle(
 	}
 
 	/* (what Discord shows of a game hosted for internet play) */
-	p2p_set_game_player_counts(server->game.player_count, server->game.maximum_players);
+	p2p_set_game_host_state(server->game.player_count, server->game.maximum_players,
+		server->game.map.name, !network_game_server_game_is_valid(server) ? 0 :
+		server->state == _network_game_server_state_pregame ? 1 :
+		server->state == _network_game_server_state_ingame ? 2 : 0);
 
 	if (network_game_server_game_is_valid(server))
 	{

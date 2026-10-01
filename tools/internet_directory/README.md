@@ -1,14 +1,17 @@
 # Internet directory: local prototype
 
 This is a dependency-free reference implementation of opt-in hosting discovery.
-It is **not integrated into Halo yet**. It does not implement a dedicated server,
+It includes an **experimental native loopback registration worker**, disabled by
+default. It does not implement a dedicated server,
 NAT relay, game transport or production public directory. No external service is
 contacted by the demo or tests. The HTTP server binds only to `127.0.0.1` on an
 ephemeral port; there is intentionally no public bind option.
 
-An additive native snapshot API has a compiled freestanding contract test, but
-has not been built into Halo or called by the directory. See [native integration](NATIVE_INTEGRATION.md)
-and the [exact Windows dependency request](WINDOWS_BUILD.md).
+The Windows game compiles and a bounded two-game local test verifies native
+registration, a real System Link match, heartbeat and graceful withdrawal.
+Selected invite resolution is tested; URI handoff and the encrypted Internet
+tunnel are not. See [native integration](NATIVE_INTEGRATION.md),
+[measured results](VALIDATION.md), and [Windows prerequisites](WINDOWS_BUILD.md).
 
 The design target is **128 simultaneous active players**. The number 128 in a
 listing is a permitted capacity field, not evidence that gameplay works at that
@@ -87,11 +90,12 @@ still sends DELETE. A failed DELETE is retried by the next lifecycle update;
 expiry bounds visibility if the host crashes or loses the network. A private
 host which has never registered makes no HTTP request.
 
-The game adapter must call update on authoritative lifecycle changes and every
-15 seconds while hosting publicly. It must keep registration I/O off the game
-thread, bound its queue, and retry with jitter/backoff shorter than the lease.
-This timer/snapshot integration is not yet implemented in the native game.
-The demo has a heartbeat timer for its synthetic snapshot only.
+The JavaScript adapter and demo remain synthetic fixtures. The separate native
+worker copies authoritative state under the P2P lock, performs HTTP off the game
+thread, updates changed metadata, and heartbeats every 15 seconds. It uses a
+single latest snapshot rather than a queue, with a three-second retry delay.
+Production jitter and generation fencing remain future work. The native worker
+only accepts explicitly configured loopback HTTP; it cannot publish remotely.
 
 ## Deliberate Join and privacy
 

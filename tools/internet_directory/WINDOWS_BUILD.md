@@ -1,14 +1,15 @@
 # Windows native build prerequisites
 
-This is a dependency request and build plan, not an installer. This document
-does not authorize installation or execution of downloaded dependencies.
+These are reproducible build notes, not an installer or permission to install
+dependencies on another machine. The approved Windows build completed on
+2026-10-01 using the versions recorded below.
 
 The checkout requires clang/lld targeting `i686-pc-windows-msvc`, Microsoft x86
 C/C++ runtime libraries and Windows SDK headers/libraries, Python, Ninja and SDL3
 development files. No Xbox SDK is required. A Visual C++ Redistributable alone
 does not provide the development libraries.
 
-## Proposed official dependencies
+## Verified official dependencies
 
 | Component | Exact proposal | Official source |
 | --- | --- | --- |
@@ -57,3 +58,25 @@ This avoids profile training and its extra compiler-rt download, and makes the
 first build easier to diagnose. Do not execute Halo as part of compilation.
 Use isolated runtime configuration only after successful compile/link and record
 actual versions and results.
+
+## Completed build
+
+Microsoft Build Tools 2022 resolved to 17.14.41 (installation version
+17.14.37710.0), with MSVC 14.44.35207 and SDK include version 10.0.26100.0.
+Installation completed successfully with no reboot required after explicit license
+acceptance. The initial deep workspace install path exceeded Microsoft's path
+limit; a short development-drive root succeeded. Shared Microsoft components
+and SDK reside on the system drive as disclosed before approval.
+
+LLVM 23.1.2, Ninja 1.13.2, SDL 3.4.16 and Python 3.12.14 were used. With LLVM and
+Ninja prepended to the process-local PATH, and verified SDL already staged:
+
+```text
+python configure.py --portable --pgo=off --lto=off --android-ndk build/no-android-ndk
+ninja -j2 windows
+```
+
+The Windows executable linked successfully, including the new native directory
+worker. No additional downloads or profile-training runs were needed. Builds
+needed an execution environment supporting compiler child processes; the initial
+restricted sandbox stalled Ninja. No Linux/Android build was run.

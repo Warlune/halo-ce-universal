@@ -614,7 +614,14 @@ static void platform_invite_clipboard(BOOL look)
 {
 	/* the last clipboard text looked at, so each invite is joined once */
 	static char seen[256];
-	const char *invite = p2p_take_clipboard_text();
+	const char *invite;
+
+	/* Automated instances must not read or replace the desktop clipboard,
+	just as they must not take over the invite URL handler. */
+	if (config_real("debug.exit_after") > 0.0 || config_boolean("debug.hidden_window") ||
+		config_boolean("debug.null_renderer"))
+		return;
+	invite = p2p_take_clipboard_text();
 
 	if (invite)
 	{

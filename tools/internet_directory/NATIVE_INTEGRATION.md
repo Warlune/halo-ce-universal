@@ -1,83 +1,92 @@
-# Next milestone: an actual Halo host
+# Native loopback directory integration
 
-The directory prototype is executable and tested. The added
-`p2p_get_host_snapshot` API is an **integration seam without a native game build**, not a connected
-directory implementation. It has no caller yet and adds no network request,
-configuration setting, background thread or automatic publication.
+The Windows game now builds and registers a real hosted session with the local
+reference directory. This is an experimental integration, not a production
+public directory or dedicated server. The settings GUI is unchanged.
 
-## Authoritative snapshot seam
+## Opt-in and transport
 
-`port/linux/src/p2p.h` declares a copied `p2p_host_snapshot` with player count,
-maximum players and current invite. The getter in `p2p.c` takes the existing
-P2P mutex, copies data, then releases it. It requires an explicit opt-in value
-of 1, a live hosting socket, active Internet hosting, an existing invite and
-valid game-reported counts. It clears output on unavailable/private calls and
-rejects null output. It never substitutes peer counts for authoritative player
-counts. An invite-size compile-time assertion checks the structure's capacity.
+`directory.c` starts only when Internet play is enabled and these process
+variables are supplied:
 
-Call only after `p2p_initialize` has completed, from a worker which does not hold
-the P2P mutex. Perform HTTP outside that lock. A snapshot is not a continuing
-liveness guarantee: closure, restart or opt-out can happen after copying.
+| Variable | Required value |
+| --- | --- |
+| `HALO_DIRECTORY_PUBLIC` | Exactly `1`; absent/other values do nothing |
+| `HALO_DIRECTORY_URL` | Exactly `http://127.0.0.1:<port>`, port 1-65535, no path/query |
+| `HALO_DIRECTORY_ID` | Operator-provisioned lowercase UUIDv4 |
+| `HALO_DIRECTORY_KEY` | Operator-provisioned 64 lowercase hex bearer credential |
+| `HALO_DIRECTORY_NAME` | 1-80 ASCII letters/digits/spaces/underscore/hyphen/period |
 
-Before publication, combine this with authoritative map and lobby/playing state
-from `network_game_server_idle` and disposal, separate System Link/netcode
-versions, and a user-chosen public name. Preserve existing player-count/Discord
-behavior. Fail closed for loading, unknown, stopped, offline and private states
-until their transitions have tests. Do not infer hosting from logs or clipboard.
+Opt-in covers hosted sessions for this process's lifetime; it is not a per-match
+GUI preference. Restart without the opt-in to disable publication. The current
+invite becomes available to directory readers who select the host. Withdrawal
+does not invalidate already copied invites. No public endpoint is accepted.
+Do not reuse credentials across overlapping processes: generation fencing is
+not implemented. Keep identity/key delivery local and out of logs and Git.
 
-## Worker and transport work still required
+The worker uses existing socket wrappers, a two-second total request deadline,
+bounded buffers, authenticated PUT/DELETE, and no redirects. It polls copied
+state every 250 ms, sends changes or a 15-second heartbeat, and waits three
+seconds before retrying failures. It never queues game frames or performs HTTP
+under the P2P mutex. Shutdown attempts withdrawal with a bounded 4.5-second wait;
+the server's 45-second lease is the fallback for a crash or unreachable service.
 
-1. Add a default-off publication setting and explicitly configured directory
-   origin, coordinating around unrelated settings GUI work. Explain that
-   publication reveals the current invite and withdrawal does not revoke copies.
-2. Deliver operator-provisioned identity/key without logging or committing them.
-   Combine snapshots with a process/session generation. Use one bounded
-   latest-value mailbox, not a queued update on every game tick.
-3. Perform registration on a worker every 15 seconds against the 45-second lease.
-   Serialize updates/withdrawals, recheck generation/opt-in before sending, bound
-   time and response size, reject redirects, and retry with backoff/jitter.
-4. Use WinHTTP with certificate validation on Windows and existing mbedTLS
-   infrastructure on Linux. Updater helpers are GET-to-file with redirects;
-   do not reuse them unchanged with registration bearer credentials. Implement
-   dedicated bounded PUT/DELETE transport and preserve the loopback mock.
-5. Withdraw on graceful stop; expire after crash. Add generation fencing before
-   supporting overlapping replacement processes. Keep the existing tunnel's
-   invite lifecycle until deliberate rotation/revocation is implemented.
+## Authoritative metadata
 
-## First actual game acceptance
+`network_game_server_idle` supplies game-reported counts, map and lobby/playing
+state together through `p2p_set_game_host_state`. Disposal clears availability.
+The snapshot getter additionally requires explicit opt-in, online P2P running,
+a live hosting socket and invite, and valid counts up to 128. Unknown/loading
+states fail closed. It copies state/map/invite under the existing mutex and
+clears the caller's output on failure. Discord still receives game player counts.
+Map basenames are normalized by the worker. System Link format 2 and netcode 9
+come from distinct production constants. Build is currently the descriptive
+`native-prototype`, not an attestation or a compatibility check.
 
-Compile and launch only the isolated development binary, with separate config,
-data root, save root and logs. Disable updater, UPnP and automatic link-handler
-takeover for test instances. Never use the live installation as a writable data
-root. Keep copied proprietary assets outside Git. Do not invoke `halo://` while
-it could hand the invite to an unrelated running game.
+A copied snapshot is not a liveness guarantee: the game can stop just after it
+is copied. Periodic rechecks, withdrawal and lease expiry bound stale visibility.
+This first worker has a fixed retry delay; production HTTPS, jitter, credential
+rotation, process-generation fencing and a public/private UI remain outstanding.
 
-Start with one real host and one real client. First test loopback registration
-and local System Link, then selected-host encrypted P2P in an authorized WAN
-test. Use a process-specific Join test entrypoint where needed. Verify actual
-map/player metadata, zero P2P activity on browse, exactly one selected host
-connection and an actual joined match. Exercise map changes, stop, crash,
-restart and private hosting. The latter must send no registration requests.
+## Actual native acceptance
 
-Next, the existing stand-in script can test 15/31/63/127 clients plus a host.
-It has not been run here and cannot validate active movement/combat/vehicles.
-The HTTP simulator has connected zero players to Halo. The 128-active-player
-gate in PLAN.md remains open.
+`native_host_test.mjs` requires a prepared `build/directory-game-test` fixture,
+a marker containing `local native directory fixture`, the freshly built
+`halo.exe` and SDL3.dll, and legitimately owned map copies under `data/maps`.
+It checks the runtime executable hash against `build/windows/halo.exe` before
+launch. It never copies from or writes to a live installation itself.
 
-## Native snapshot tests still required
+```text
+node tools/internet_directory/native_host_test.mjs public
+node tools/internet_directory/native_host_test.mjs private
+node tools/internet_directory/native_host_test.mjs match
+```
 
-Compile the Windows target and test unavailable/offline, unknown counts, opt-out,
-active lobby/match, socket closure before `update_hosting`, disposal and restart.
-Check counts at 0/1/127/128, cleared output on failure, no truncated invite, and
-concurrent game-count changes. Build/test Linux before claiming cross-platform
-support. The directory JavaScript tests do not compile or execute this C function.
+`public` runs a one-player lobby; `private` checks default-off publication;
+`match` prepares a second isolated fixture from the first fixture's copied maps
+and runs one host plus one real LAN client. The match test uses loopback System
+Link after explicit invite resolution. It does not consume that invite to
+establish an encrypted tunnel. No URI is opened and no unrelated process is
+joined or stopped. Only spawned processes can be terminated by the 65-second
+guard. Each copy has separate data, saves, profiles and logs. Maps and raw logs
+stay under ignored `build/`; raw logs contain upstream invites and must not be
+shared or committed. Provisioned directory credentials exist only in memory.
 
-## Isolated C contract test (completed)
+The tests disable updater, UPnP, STUN/MQTT signalling and Discord. A hidden
+rendering window is used. Automated instances now skip desktop clipboard access,
+matching the existing automated-run URL-handler guard. Null rendering remains a
+debug facility: upstream's event-pump timer returns before checking exit_after
+when no window exists. It is not a reliable production shutdown mechanism.
 
-The approved LLVM 23.1.2 compiler can test this getter without a Microsoft runtime.
-`native_snapshot_test.mjs prepare` extracts the unchanged getter and its size
-assertion from `p2p.c` into a freestanding C fixture using the production headers.
-Compile the fixture to WebAssembly, then execute it with the existing Node runtime:
+The completed two-game test observed initial default lobby map `carousel`, then
+`bloodgulch`, player count rising to two, lobby -> playing, unchanged-metadata
+heartbeat renewal, selected invite resolution, and immediate withdrawal on
+normal host exit. Both copies logged simulated players in the loaded match.
+This was a short lifecycle/LAN check, not movement/combat/vehicle agreement,
+latency measurement, WAN acceptance or 128-player validation. Results and
+remaining gates are in [VALIDATION.md](VALIDATION.md) and [PLAN.md](PLAN.md).
+
+## Compiled snapshot contract
 
 ```powershell
 node tools/internet_directory/native_snapshot_test.mjs prepare
@@ -85,9 +94,9 @@ node tools/internet_directory/native_snapshot_test.mjs prepare
 node tools/internet_directory/native_snapshot_test.mjs check
 ```
 
-This passed null output, explicit opt-in refusal, nine unavailable/invalid host
-states, counts 0 through 128, a one-player maximum, copied invite data with its
-terminator, cleared output and balanced instrumented locks. No body rewriting
-or equivalent JavaScript implementation is used. This is a contract test of the
-real C getter with stand-in state/memory/mutex functions; it does not compile
-the entire `p2p.c`, test real mutex concurrency, link Halo, or exercise gameplay.
+The fixture extracts the unchanged getter/size assertion and uses production
+headers with instrumented stand-ins for state, memory and locking. It passes
+null/opt-out clearing, twelve unavailable/invalid states, all counts 0-128,
+lobby/playing copies, invite terminator and balanced locks. It does not prove
+real mutex concurrency. The native game build and acceptance above are separate
+checks; Linux and Android remain unbuilt and untested.

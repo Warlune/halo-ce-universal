@@ -57,6 +57,7 @@ only look up and create stand-ins.
 #include "posix.h"
 #include "port_config.h"
 #include "p2p_internal.h"
+#include "directory.h"
 #include "ikcp.h"
 
 #include <stddef.h>
@@ -321,6 +322,8 @@ static struct
 	was told */
 	int game_player_count;
 	int game_player_maximum;
+	int game_host_state;
+	char game_host_map[64];
 	int reported_player_count;
 	int reported_player_maximum;
 
@@ -2428,6 +2431,21 @@ void p2p_set_game_player_counts(int count, int maximum)
 	pthread_mutex_unlock(&p2p_lock);
 }
 
+void p2p_set_game_host_state(int count, int maximum, const char *map, int state)
+{
+	pthread_mutex_lock(&p2p_lock);
+	p2p.game_player_count = count;
+	p2p.game_player_maximum = maximum;
+	p2p.game_host_state = 0;
+	memset(p2p.game_host_map, 0, sizeof(p2p.game_host_map));
+	if (map && *map && strlen(map) < sizeof(p2p.game_host_map) && (state == 1 || state == 2))
+	{
+		strcpy(p2p.game_host_map, map);
+		p2p.game_host_state = state;
+	}
+	pthread_mutex_unlock(&p2p_lock);
+}
+
 /* Keep the public copy's size in step with the actual invite format. */
 typedef char p2p_host_invite_size_matches[
 	P2P_HOST_INVITE_SIZE == P2P_LINK_SIZE ? 1 : -1];
@@ -2447,11 +2465,14 @@ int p2p_get_host_snapshot(int public_host, struct p2p_host_snapshot *snapshot)
 	Do not return its previous invite during that gap, nor substitute a peer
 	count for a game count before the server has reported its state. */
 	if (p2p.running && p2p.hosting && p2p.hosting_socket >= 0 && p2p.has_token &&
+		(p2p.game_host_state == 1 || p2p.game_host_state == 2) && p2p.game_host_map[0] &&
 		p2p.game_player_maximum > 0 && p2p.game_player_maximum <= P2P_MAXIMUM_PEERS + 1 &&
 		p2p.game_player_count >= 0 && p2p.game_player_count <= p2p.game_player_maximum)
 	{
 		snapshot->player_count = p2p.game_player_count;
 		snapshot->maximum_players = p2p.game_player_maximum;
+		snapshot->state = p2p.game_host_state;
+		memcpy(snapshot->map, p2p.game_host_map, sizeof(snapshot->map));
 		memcpy(snapshot->invite, p2p.invite, sizeof(snapshot->invite));
 		available = 1;
 	}
@@ -2984,6 +3005,7 @@ void p2p_initialize(unsigned long local_address)
 	}
 	pthread_detach(thread);
 	p2p.running = 1;
+	directory_initialize();
 	if (command_line_invite(invite, sizeof(invite)))
 		p2p_join_invite(invite);
 }
