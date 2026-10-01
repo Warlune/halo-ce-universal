@@ -1,7 +1,7 @@
 # Next milestone: an actual Halo host
 
 The directory prototype is executable and tested. The added
-`p2p_get_host_snapshot` API is an **uncompiled integration seam**, not a connected
+`p2p_get_host_snapshot` API is an **integration seam without a native game build**, not a connected
 directory implementation. It has no caller yet and adds no network request,
 configuration setting, background thread or automatic publication.
 
@@ -70,4 +70,24 @@ Compile the Windows target and test unavailable/offline, unknown counts, opt-out
 active lobby/match, socket closure before `update_hosting`, disposal and restart.
 Check counts at 0/1/127/128, cleared output on failure, no truncated invite, and
 concurrent game-count changes. Build/test Linux before claiming cross-platform
-support. The JavaScript tests do not compile, link or execute this C function.
+support. The directory JavaScript tests do not compile or execute this C function.
+
+## Isolated C contract test (completed)
+
+The approved LLVM 23.1.2 compiler can test this getter without a Microsoft runtime.
+`native_snapshot_test.mjs prepare` extracts the unchanged getter and its size
+assertion from `p2p.c` into a freestanding C fixture using the production headers.
+Compile the fixture to WebAssembly, then execute it with the existing Node runtime:
+
+```powershell
+node tools/internet_directory/native_snapshot_test.mjs prepare
+& '<LLVM_DIR>/bin/clang.exe' --target=wasm32-unknown-unknown -std=c11 -Wall -Wextra -Werror -ffreestanding -fno-builtin -nostdlib -Iport/linux/src '-Wl,--no-entry' '-Wl,--export=run_snapshot_tests' build/snapshot-contract/snapshot.c -o build/snapshot-contract/snapshot.wasm
+node tools/internet_directory/native_snapshot_test.mjs check
+```
+
+This passed null output, explicit opt-in refusal, nine unavailable/invalid host
+states, counts 0 through 128, a one-player maximum, copied invite data with its
+terminator, cleared output and balanced instrumented locks. No body rewriting
+or equivalent JavaScript implementation is used. This is a contract test of the
+real C getter with stand-in state/memory/mutex functions; it does not compile
+the entire `p2p.c`, test real mutex concurrency, link Halo, or exercise gameplay.

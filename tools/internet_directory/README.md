@@ -6,8 +6,8 @@ NAT relay, game transport or production public directory. No external service is
 contacted by the demo or tests. The HTTP server binds only to `127.0.0.1` on an
 ephemeral port; there is intentionally no public bind option.
 
-An additive native snapshot API is now staged for future integration, but has
-not been compiled or called by the directory. See [native integration](NATIVE_INTEGRATION.md)
+An additive native snapshot API has a compiled freestanding contract test, but
+has not been built into Halo or called by the directory. See [native integration](NATIVE_INTEGRATION.md)
 and the [exact Windows dependency request](WINDOWS_BUILD.md).
 
 The design target is **128 simultaneous active players**. The number 128 in a

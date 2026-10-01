@@ -41,7 +41,7 @@ Source baseline:
    selected host and offer deliberate URI handoff. Unit/HTTP tests and bounded
    16/32/64/128 directory-client exercise. Zero native game modifications.
 2. **Native host lifecycle integration.** A synchronized snapshot API is now
-   present but uncompiled, unused and not yet connected to the directory; see
+   present with an isolated C contract test, unused and not yet connected to the directory; see
    [NATIVE_INTEGRATION.md](NATIVE_INTEGRATION.md). Add configuration for an optional
    directory origin and `public_host=false` by default, plus bounded in-memory
    credential delivery. Obtain current invite under P2P synchronization rather
